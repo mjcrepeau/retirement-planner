@@ -1,0 +1,24 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #3b82f6;
+  --color-primary-dark: #2563eb;
+  --color-secondary: #10b981;
+  --color-secondary-dark: #059669;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+
+  /* Chart colors by tax treatment */
+  --color-pretax: #3b82f6;
+  --color-roth: #10b981;
+  --color-taxable: #f59e0b;
+  --color-hsa: #8b5cf6;
+}
+
+body {
+  @apply bg-gray-50 text-gray-900 min-h-screen;
+}
+
+#root {
+  @apply min-h-screen;
+}
