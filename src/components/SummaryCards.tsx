@@ -23,26 +23,26 @@ interface StatCardProps {
 
 function StatCard({ title, value, subtitle, color = 'blue' }: StatCardProps) {
   const colorClasses = {
-    blue: 'bg-blue-50 border-blue-200',
-    green: 'bg-green-50 border-green-200',
-    amber: 'bg-amber-50 border-amber-200',
-    red: 'bg-red-50 border-red-200',
-    purple: 'bg-purple-50 border-purple-200',
+    blue: 'bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800',
+    green: 'bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-800',
+    amber: 'bg-amber-50 dark:bg-amber-900/30 border-amber-200 dark:border-amber-800',
+    red: 'bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-800',
+    purple: 'bg-purple-50 dark:bg-purple-900/30 border-purple-200 dark:border-purple-800',
   };
 
   const valueColors = {
-    blue: 'text-blue-700',
-    green: 'text-green-700',
-    amber: 'text-amber-700',
-    red: 'text-red-700',
-    purple: 'text-purple-700',
+    blue: 'text-blue-700 dark:text-blue-300',
+    green: 'text-green-700 dark:text-green-300',
+    amber: 'text-amber-700 dark:text-amber-300',
+    red: 'text-red-700 dark:text-red-300',
+    purple: 'text-purple-700 dark:text-purple-300',
   };
 
   return (
     <div className={`p-4 rounded-lg border ${colorClasses[color]}`}>
-      <p className="text-sm font-medium text-gray-600">{title}</p>
+      <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{title}</p>
       <p className={`text-2xl font-bold ${valueColors[color]}`}>{value}</p>
-      {subtitle && <p className="text-xs text-gray-500 mt-1">{subtitle}</p>}
+      {subtitle && <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{subtitle}</p>}
     </div>
   );
 }
@@ -78,7 +78,7 @@ export function SummaryCards({
     <div className="space-y-6">
       {/* At Retirement */}
       <div>
-        <h3 className="text-lg font-semibold text-gray-900 mb-3">At Retirement (Age {profile.retirementAge})</h3>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">At Retirement (Age {profile.retirementAge})</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatCard
             title="Total Portfolio"
@@ -108,7 +108,7 @@ export function SummaryCards({
 
       {/* During Retirement */}
       <div>
-        <h3 className="text-lg font-semibold text-gray-900 mb-3">During Retirement</h3>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">During Retirement</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatCard
             title="Monthly Withdrawal"
@@ -139,14 +139,14 @@ export function SummaryCards({
 
       {/* Warnings */}
       {portfolioDepletionAge && portfolioDepletionAge < profile.lifeExpectancy && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+        <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg p-4">
           <div className="flex items-start gap-3">
-            <svg className="w-5 h-5 text-red-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5 text-red-600 dark:text-red-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
             <div>
-              <h4 className="font-medium text-red-800">Portfolio Depletion Warning</h4>
-              <p className="text-sm text-red-700 mt-1">
+              <h4 className="font-medium text-red-800 dark:text-red-300">Portfolio Depletion Warning</h4>
+              <p className="text-sm text-red-700 dark:text-red-400 mt-1">
                 Your portfolio is projected to deplete at age {portfolioDepletionAge}, which is{' '}
                 {profile.lifeExpectancy - portfolioDepletionAge} years before your planned life expectancy.
                 Consider increasing savings, reducing withdrawal rate, or adjusting retirement age.

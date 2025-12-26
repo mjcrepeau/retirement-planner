@@ -15,10 +15,42 @@
   --color-hsa: #8b5cf6;
 }
 
+/* Light mode (default) */
 body {
-  @apply bg-gray-50 text-gray-900 min-h-screen;
+  @apply bg-gray-50 text-gray-900 min-h-screen transition-colors duration-200;
 }
 
 #root {
   @apply min-h-screen;
+}
+
+/* Dark mode */
+.dark body {
+  @apply bg-gray-900 text-gray-100;
+}
+
+/* Dark mode form inputs */
+.dark input,
+.dark select {
+  @apply bg-gray-700 border-gray-600 text-gray-100;
+}
+
+.dark input::placeholder {
+  @apply text-gray-400;
+}
+
+/* Dark mode focus states */
+.dark input:focus,
+.dark select:focus {
+  @apply border-blue-500 ring-blue-500;
+}
+
+/* Recharts dark mode tooltip styling */
+.dark .recharts-default-tooltip {
+  background-color: #1f2937 !important;
+  border-color: #374151 !important;
+}
+
+.dark .recharts-tooltip-label {
+  color: #f3f4f6 !important;
 }

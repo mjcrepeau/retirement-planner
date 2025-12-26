@@ -15,13 +15,13 @@ export function AssumptionsForm({ assumptions, onChange }: AssumptionsFormProps)
 
   return (
     <div className="space-y-4">
-      <h3 className="text-lg font-semibold text-gray-900 border-b pb-2">Economic Assumptions</h3>
+      <h3 className="text-lg font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-600 pb-2">Economic Assumptions</h3>
 
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Inflation Rate (%)
-            <span className="text-gray-500 text-xs ml-1" title="Expected annual inflation rate">
+            <span className="text-gray-500 dark:text-gray-400 text-xs ml-1" title="Expected annual inflation rate">
               ⓘ
             </span>
           </label>
@@ -32,15 +32,15 @@ export function AssumptionsForm({ assumptions, onChange }: AssumptionsFormProps)
             min={0}
             max={10}
             step={0.1}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
           />
-          <p className="text-xs text-gray-500 mt-1">Historical average: ~3%</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Historical average: ~3%</p>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Safe Withdrawal Rate (%)
-            <span className="text-gray-500 text-xs ml-1" title="Percentage of portfolio to withdraw annually in retirement">
+            <span className="text-gray-500 dark:text-gray-400 text-xs ml-1" title="Percentage of portfolio to withdraw annually in retirement">
               ⓘ
             </span>
           </label>
@@ -51,15 +51,15 @@ export function AssumptionsForm({ assumptions, onChange }: AssumptionsFormProps)
             min={1}
             max={10}
             step={0.1}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
           />
-          <p className="text-xs text-gray-500 mt-1">Traditional rule: 4%</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Traditional rule: 4%</p>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Retirement Return Rate (%)
-            <span className="text-gray-500 text-xs ml-1" title="Expected annual return during retirement (typically more conservative)">
+            <span className="text-gray-500 dark:text-gray-400 text-xs ml-1" title="Expected annual return during retirement (typically more conservative)">
               ⓘ
             </span>
           </label>
@@ -70,9 +70,9 @@ export function AssumptionsForm({ assumptions, onChange }: AssumptionsFormProps)
             min={0}
             max={15}
             step={0.1}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
           />
-          <p className="text-xs text-gray-500 mt-1">Conservative assumption: 5%</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Conservative assumption: 5%</p>
         </div>
       </div>
     </div>

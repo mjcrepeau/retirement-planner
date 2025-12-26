@@ -333,5 +333,23 @@ function performTaxOptimizedWithdrawal(
     }
   }
 
+  // Step 6: If still need more money and have traditional accounts with balance,
+  // withdraw beyond the 12% bracket (accepting higher taxes is better than not meeting needs)
+  if (remainingNeed > 0) {
+    for (const acc of traditionalAccounts) {
+      if (remainingNeed <= 0) break;
+      const withdrawal = Math.min(remainingNeed, acc.balance);
+      acc.balance -= withdrawal;
+      result.byAccount[acc.id] += withdrawal;
+      result.traditionalWithdrawal += withdrawal;
+      result.total += withdrawal;
+      remainingNeed -= withdrawal;
+
+      if (acc.balance <= 0 && accountDepletionAges[acc.id] === null) {
+        accountDepletionAges[acc.id] = age;
+      }
+    }
+  }
+
   return result;
 }

@@ -51,8 +51,8 @@ export function AccountList({ accounts, onAdd, onUpdate, onDelete }: AccountList
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center border-b pb-2">
-        <h3 className="text-lg font-semibold text-gray-900">
+      <div className="flex justify-between items-center border-b border-gray-200 dark:border-gray-600 pb-2">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
           Investment Accounts
         </h3>
         {!showForm && (
@@ -66,8 +66,8 @@ export function AccountList({ accounts, onAdd, onUpdate, onDelete }: AccountList
       </div>
 
       {showForm && (
-        <div className="bg-gray-50 p-4 rounded-lg">
-          <h4 className="text-md font-medium text-gray-800 mb-3">
+        <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+          <h4 className="text-md font-medium text-gray-800 dark:text-gray-200 mb-3">
             {editingAccount ? 'Edit Account' : 'New Account'}
           </h4>
           <AccountForm
@@ -79,7 +79,7 @@ export function AccountList({ accounts, onAdd, onUpdate, onDelete }: AccountList
       )}
 
       {accounts.length === 0 && !showForm ? (
-        <p className="text-gray-500 text-sm py-4 text-center">
+        <p className="text-gray-500 dark:text-gray-400 text-sm py-4 text-center">
           No accounts added yet. Click "Add Account" to get started.
         </p>
       ) : (
@@ -87,7 +87,7 @@ export function AccountList({ accounts, onAdd, onUpdate, onDelete }: AccountList
           {accounts.map(account => (
             <div
               key={account.id}
-              className="flex items-center justify-between p-3 bg-white border rounded-lg hover:shadow-sm transition-shadow"
+              className="flex items-center justify-between p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg hover:shadow-sm transition-shadow"
             >
               <div className="flex items-center gap-3">
                 <div
@@ -95,8 +95,8 @@ export function AccountList({ accounts, onAdd, onUpdate, onDelete }: AccountList
                   style={{ backgroundColor: getTaxTreatmentColor(account.type) }}
                 />
                 <div>
-                  <div className="font-medium text-gray-900">{account.name}</div>
-                  <div className="text-sm text-gray-500">
+                  <div className="font-medium text-gray-900 dark:text-white">{account.name}</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
                     {getAccountTypeLabel(account.type)}
                   </div>
                 </div>
@@ -104,10 +104,10 @@ export function AccountList({ accounts, onAdd, onUpdate, onDelete }: AccountList
 
               <div className="flex items-center gap-4">
                 <div className="text-right">
-                  <div className="font-medium text-gray-900">
+                  <div className="font-medium text-gray-900 dark:text-white">
                     {formatCurrency(account.balance)}
                   </div>
-                  <div className="text-sm text-gray-500">
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
                     +{formatCurrency(account.annualContribution)}/yr
                   </div>
                 </div>
@@ -115,7 +115,7 @@ export function AccountList({ accounts, onAdd, onUpdate, onDelete }: AccountList
                 <div className="flex gap-1">
                   <button
                     onClick={() => handleEdit(account)}
-                    className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"
+                    className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded"
                     title="Edit"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -124,7 +124,7 @@ export function AccountList({ accounts, onAdd, onUpdate, onDelete }: AccountList
                   </button>
                   <button
                     onClick={() => onDelete(account.id)}
-                    className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded"
+                    className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded"
                     title="Delete"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -137,9 +137,9 @@ export function AccountList({ accounts, onAdd, onUpdate, onDelete }: AccountList
           ))}
 
           {accounts.length > 0 && (
-            <div className="flex justify-between items-center pt-2 border-t mt-2">
-              <span className="font-medium text-gray-700">Total</span>
-              <span className="font-semibold text-gray-900">{formatCurrency(totalBalance)}</span>
+            <div className="flex justify-between items-center pt-2 border-t border-gray-200 dark:border-gray-600 mt-2">
+              <span className="font-medium text-gray-700 dark:text-gray-300">Total</span>
+              <span className="font-semibold text-gray-900 dark:text-white">{formatCurrency(totalBalance)}</span>
             </div>
           )}
         </div>
