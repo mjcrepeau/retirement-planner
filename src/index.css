@@ -57,3 +57,13 @@ body {
 .dark .recharts-tooltip-label {
   color: #f3f4f6 !important;
 }
+
+/* Hide scrollbar for horizontal scroll tabs */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}

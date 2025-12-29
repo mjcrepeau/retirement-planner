@@ -121,7 +121,7 @@ export function ChartComposition({ accounts, result, isDarkMode = false }: Chart
         <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 text-center mb-2">
           By Tax Treatment
         </h4>
-        <div className="h-64">
+        <div className="h-64 touch-pan-y">
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
@@ -154,7 +154,7 @@ export function ChartComposition({ accounts, result, isDarkMode = false }: Chart
         <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 text-center mb-2">
           By Account
         </h4>
-        <div className="h-64">
+        <div className="h-64 touch-pan-y">
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
