@@ -98,7 +98,7 @@ export function ChartIncome({ result, isDarkMode = false }: ChartIncomeProps) {
   }));
 
   return (
-    <div className="w-full h-80">
+    <div className="w-full h-80 touch-pan-y">
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
