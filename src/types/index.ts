@@ -1,10 +1,28 @@
-export type AccountType =
+// Country code
+export type CountryCode = 'US' | 'CA';
+
+// US Account Types
+export type USAccountType =
   | 'traditional_401k'
   | 'roth_401k'
   | 'traditional_ira'
   | 'roth_ira'
   | 'taxable'
   | 'hsa';
+
+// Canadian Account Types
+export type CAAccountType =
+  | 'rrsp'
+  | 'tfsa'
+  | 'rrif'
+  | 'lira'
+  | 'lif'
+  | 'fhsa'
+  | 'non_registered'
+  | 'employer_rrsp';
+
+// Combined account type (union of all countries)
+export type AccountType = USAccountType | CAAccountType;
 
 export type FilingStatus = 'single' | 'married_filing_jointly';
 
@@ -23,13 +41,18 @@ export interface Account {
 }
 
 export interface Profile {
+  country: CountryCode;
   currentAge: number;
   retirementAge: number;
   lifeExpectancy: number;
-  filingStatus: FilingStatus;
-  stateTaxRate: number; // as decimal
-  socialSecurityBenefit?: number; // annual, in today's dollars
-  socialSecurityStartAge?: number;
+  region: string; // State code (US) or Province code (CA)
+  filingStatus?: FilingStatus; // US only
+  stateTaxRate?: number; // US only (as decimal), CA uses province
+  annualIncome?: number; // For CA RRSP contribution room calculation
+  socialSecurityBenefit?: number; // CPP for CA, Social Security for US (annual)
+  socialSecurityStartAge?: number; // CPP/SS start age
+  secondaryBenefitStartAge?: number; // OAS for CA
+  secondaryBenefitAmount?: number; // OAS amount for CA
 }
 
 export interface Assumptions {
@@ -50,12 +73,7 @@ export interface AccumulationResult {
   yearlyBalances: YearlyAccountBalance[];
   finalBalances: Record<string, number>;
   totalAtRetirement: number;
-  breakdownByTaxTreatment: {
-    pretax: number;
-    roth: number;
-    taxable: number;
-    hsa: number;
-  };
+  breakdownByGroup: Record<string, number>; // Flexible groupings defined by country
 }
 
 export interface YearlyWithdrawal {
@@ -106,6 +124,7 @@ export interface RMDEntry {
 // Helper function type for getting tax treatment
 export function getTaxTreatment(accountType: AccountType): TaxTreatment {
   switch (accountType) {
+    // US accounts
     case 'traditional_401k':
     case 'traditional_ira':
       return 'pretax';
@@ -116,11 +135,26 @@ export function getTaxTreatment(accountType: AccountType): TaxTreatment {
       return 'taxable';
     case 'hsa':
       return 'hsa';
+    // Canadian accounts
+    case 'rrsp':
+    case 'rrif':
+    case 'lira':
+    case 'lif':
+    case 'fhsa':
+    case 'employer_rrsp':
+      return 'pretax';
+    case 'tfsa':
+      return 'roth';
+    case 'non_registered':
+      return 'taxable';
+    default:
+      return 'taxable';
   }
 }
 
 export function getAccountTypeLabel(type: AccountType): string {
   switch (type) {
+    // US accounts
     case 'traditional_401k':
       return 'Traditional 401(k)';
     case 'roth_401k':
@@ -133,6 +167,25 @@ export function getAccountTypeLabel(type: AccountType): string {
       return 'Taxable Brokerage';
     case 'hsa':
       return 'HSA';
+    // Canadian accounts
+    case 'rrsp':
+      return 'RRSP';
+    case 'tfsa':
+      return 'TFSA';
+    case 'rrif':
+      return 'RRIF';
+    case 'lira':
+      return 'LIRA';
+    case 'lif':
+      return 'LIF';
+    case 'fhsa':
+      return 'FHSA';
+    case 'non_registered':
+      return 'Non-Registered';
+    case 'employer_rrsp':
+      return 'Employer RRSP';
+    default:
+      return type;
   }
 }
 

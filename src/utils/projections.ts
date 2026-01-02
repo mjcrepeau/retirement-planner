@@ -3,15 +3,17 @@ import {
   Profile,
   AccumulationResult,
   YearlyAccountBalance,
-  getTaxTreatment,
   is401k,
 } from '../types';
+import type { CountryConfig } from '../countries';
 
 /**
- * Calculate employer match for a 401k account
+ * Calculate employer match for accounts that support it (401k, employer RRSP)
  */
 function calculateEmployerMatch(account: Account): number {
-  if (!is401k(account.type) || !account.employerMatchPercent || !account.employerMatchLimit) {
+  const supportsMatch = is401k(account.type) || account.type === 'employer_rrsp';
+
+  if (!supportsMatch || !account.employerMatchPercent || !account.employerMatchLimit) {
     return 0;
   }
 
@@ -27,7 +29,8 @@ function calculateEmployerMatch(account: Account): number {
  */
 export function calculateAccumulation(
   accounts: Account[],
-  profile: Profile
+  profile: Profile,
+  countryConfig: CountryConfig
 ): AccumulationResult {
   const yearsToRetirement = profile.retirementAge - profile.currentAge;
   const currentYear = new Date().getFullYear();
@@ -89,24 +92,30 @@ export function calculateAccumulation(
     });
   }
 
-  // Calculate breakdown by tax treatment
-  const breakdownByTaxTreatment = {
-    pretax: 0,
-    roth: 0,
-    taxable: 0,
-    hsa: 0,
-  };
+  // Calculate breakdown by country-specific groupings
+  const breakdownByGroup: Record<string, number> = {};
+  const accountGroupings = countryConfig.getAccountGroupings();
 
+  // Initialize all groups to 0
+  accountGroupings.forEach(group => {
+    breakdownByGroup[group.id] = 0;
+  });
+
+  // Sum up balances for each group
   accounts.forEach(account => {
-    const treatment = getTaxTreatment(account.type);
-    breakdownByTaxTreatment[treatment] += balances[account.id];
+    const accountType = account.type;
+    // Find which group this account belongs to
+    const group = accountGroupings.find(g => g.accountTypes.includes(accountType));
+    if (group) {
+      breakdownByGroup[group.id] += balances[account.id];
+    }
   });
 
   return {
     yearlyBalances,
     finalBalances: { ...balances },
     totalAtRetirement: Object.values(balances).reduce((sum, b) => sum + b, 0),
-    breakdownByTaxTreatment,
+    breakdownByGroup,
   };
 }
 

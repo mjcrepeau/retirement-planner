@@ -91,7 +91,7 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
               </div>
               <div className="flex justify-between">
                 <dt className="text-gray-600 dark:text-gray-400">State Tax Rate</dt>
-                <dd className="font-mono text-gray-900 dark:text-white">{formatPercent(profile.stateTaxRate)}</dd>
+                <dd className="font-mono text-gray-900 dark:text-white">{formatPercent(profile.stateTaxRate || 0)}</dd>
               </div>
               <div className="flex justify-between">
                 <dt className="text-gray-600 dark:text-gray-400">Standard Deduction</dt>
@@ -238,7 +238,7 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
           <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
             <h4 className="font-medium text-gray-800 dark:text-gray-200 mb-2">State Tax (Simplified)</h4>
             <code className="text-xs bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded block mb-2 text-gray-800 dark:text-gray-200">
-              State Tax = (Ordinary Income + Capital Gains - Standard Deduction) × {formatPercent(profile.stateTaxRate)}
+              State Tax = (Ordinary Income + Capital Gains - Standard Deduction) × {formatPercent(profile.stateTaxRate || 0)}
             </code>
             <p className="text-gray-600 dark:text-gray-400">
               Flat rate applied to taxable income. Actual state taxes vary by state.

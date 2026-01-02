@@ -3,6 +3,7 @@ import { Account, AccountType, getAccountTypeLabel, is401k } from '../types';
 import { NumberInput } from './NumberInput';
 import { Tooltip } from './Tooltip';
 import { v4 as uuidv4 } from 'uuid';
+import { useCountry } from '../contexts/CountryContext';
 
 interface AccountFormProps {
   account?: Account;
@@ -23,6 +24,8 @@ const inputClassName = "w-full px-3 py-2 border border-gray-300 dark:border-gray
 const inputErrorClassName = "w-full px-3 py-2 border border-red-500 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 dark:text-white";
 
 export function AccountForm({ account, onSave, onCancel }: AccountFormProps) {
+  const { config: countryConfig } = useCountry();
+
   // Initialize form data from account prop (component is re-mounted with key when account changes)
   const [formData, setFormData] = useState<Omit<Account, 'id'>>(() => {
     if (account) {
@@ -30,7 +33,9 @@ export function AccountForm({ account, onSave, onCancel }: AccountFormProps) {
       void _id; // Explicitly mark as intentionally unused
       return rest;
     }
-    return { ...defaultAccount };
+    // Use first account type from country config as default
+    const defaultType = countryConfig.accountTypes[0]?.type || 'traditional_401k';
+    return { ...defaultAccount, type: defaultType as AccountType };
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -80,16 +85,13 @@ export function AccountForm({ account, onSave, onCancel }: AccountFormProps) {
     });
   };
 
-  const accountTypes: AccountType[] = [
-    'traditional_401k',
-    'roth_401k',
-    'traditional_ira',
-    'roth_ira',
-    'taxable',
-    'hsa',
-  ];
+  // Get account types from country config
+  const accountTypes: AccountType[] = countryConfig.accountTypes.map(
+    (config) => config.type as AccountType
+  );
 
-  const show401kFields = is401k(formData.type);
+  // Show employer match fields for 401k or employer RRSP
+  const showEmployerMatchFields = is401k(formData.type) || formData.type === 'employer_rrsp';
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -191,9 +193,11 @@ export function AccountForm({ account, onSave, onCancel }: AccountFormProps) {
         </div>
       </div>
 
-      {show401kFields && (
+      {showEmployerMatchFields && (
         <div className="border-t border-gray-200 dark:border-gray-600 pt-4 mt-4">
-          <h4 className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-3">Employer Match</h4>
+          <h4 className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-3">
+            {is401k(formData.type) ? '401(k) Employer Match' : 'Employer Match'}
+          </h4>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">

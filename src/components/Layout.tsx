@@ -1,4 +1,5 @@
 import { ReactNode } from 'react';
+import { CountrySelector } from './CountrySelector';
 
 interface LayoutProps {
   children: ReactNode;
@@ -45,6 +46,12 @@ export function Layout({ children, isDarkMode, onToggleDarkMode, onReset }: Layo
 
               {/* Divider */}
               <div className="hidden md:block w-px h-6 bg-gray-300 dark:bg-gray-600"></div>
+
+              {/* Country Selector */}
+              <CountrySelector />
+
+              {/* Divider */}
+              <div className="w-px h-6 bg-gray-300 dark:bg-gray-600"></div>
 
               {/* Reset Button */}
               <button

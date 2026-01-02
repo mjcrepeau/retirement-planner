@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { AccumulationResult, RetirementResult, Profile, Assumptions } from '../types';
 import { STANDARD_DEDUCTION_MFJ, STANDARD_DEDUCTION_SINGLE } from '../utils/constants';
+import { useCountry } from '../contexts/CountryContext';
 
 interface SummaryCardsProps {
   profile: Profile;
@@ -123,7 +124,9 @@ export function SummaryCards({
   accumulationResult,
   retirementResult,
 }: SummaryCardsProps) {
-  const { totalAtRetirement, breakdownByTaxTreatment } = accumulationResult;
+  const { country, config: countryConfig } = useCountry();
+  const { totalAtRetirement, breakdownByGroup } = accumulationResult;
+  const accountGroupings = countryConfig.getAccountGroupings();
   const {
     sustainableMonthlyWithdrawal,
     sustainableAnnualWithdrawal,
@@ -196,61 +199,40 @@ export function SummaryCards({
             formula={`Sum of all account balances after ${yearsToRetirement} years of growth`}
             details={
               <div>
-                <p className="font-medium mb-1">Breakdown by tax treatment:</p>
+                <p className="font-medium mb-1">Breakdown by account type:</p>
                 <ul className="space-y-0.5">
-                  <li>Pre-tax: {formatCurrency(breakdownByTaxTreatment.pretax)}</li>
-                  <li>Roth: {formatCurrency(breakdownByTaxTreatment.roth)}</li>
-                  <li>Taxable: {formatCurrency(breakdownByTaxTreatment.taxable)}</li>
-                  <li>HSA: {formatCurrency(breakdownByTaxTreatment.hsa)}</li>
+                  {accountGroupings.filter(g => breakdownByGroup[g.id] > 0).map(group => (
+                    <li key={group.id}>{group.label}: {formatCurrency(breakdownByGroup[group.id] || 0)}</li>
+                  ))}
                 </ul>
               </div>
             }
           />
-          <ExpandableStatCard
-            title="Pre-Tax"
-            value={formatCurrency(breakdownByTaxTreatment.pretax)}
-            subtitle={`${((breakdownByTaxTreatment.pretax / totalAtRetirement) * 100).toFixed(0)}% of portfolio`}
-            color="blue"
-            formula="Traditional 401(k) + Traditional IRA balances"
-            details={
-              <p>
-                Pre-tax accounts grow tax-deferred. Withdrawals are taxed as ordinary income.
-                Subject to Required Minimum Distributions (RMDs) starting at age 73.
-              </p>
-            }
-          />
-          <ExpandableStatCard
-            title="Roth (Tax-Free)"
-            value={formatCurrency(breakdownByTaxTreatment.roth)}
-            subtitle={`${((breakdownByTaxTreatment.roth / totalAtRetirement) * 100).toFixed(0)}% of portfolio`}
-            color="green"
-            formula="Roth 401(k) + Roth IRA balances"
-            details={
-              <p>
-                Roth accounts grow tax-free. Qualified withdrawals (after age 59½ and 5-year holding)
-                are completely tax-free. No RMDs required for Roth IRAs.
-              </p>
-            }
-          />
-          <ExpandableStatCard
-            title="Taxable + HSA"
-            value={formatCurrency(breakdownByTaxTreatment.taxable + breakdownByTaxTreatment.hsa)}
-            subtitle={`${(((breakdownByTaxTreatment.taxable + breakdownByTaxTreatment.hsa) / totalAtRetirement) * 100).toFixed(0)}% of portfolio`}
-            color="amber"
-            formula="Taxable brokerage + HSA balances"
-            details={
-              <div>
-                <p className="mb-1">
-                  <strong>Taxable:</strong> {formatCurrency(breakdownByTaxTreatment.taxable)} -
-                  Only gains are taxed at capital gains rates (often 0% or 15%).
-                </p>
-                <p>
-                  <strong>HSA:</strong> {formatCurrency(breakdownByTaxTreatment.hsa)} -
-                  Tax-free for qualified medical expenses.
-                </p>
-              </div>
-            }
-          />
+          {accountGroupings.filter(g => breakdownByGroup[g.id] > 0).map((group) => {
+            const amount = breakdownByGroup[group.id] || 0;
+            const percentage = totalAtRetirement > 0 ? (amount / totalAtRetirement) * 100 : 0;
+            // Map group colors to card colors
+            const colorMap: Record<string, 'blue' | 'green' | 'amber' | 'purple' | 'teal'> = {
+              '#3b82f6': 'blue',    // pretax
+              '#10b981': 'green',   // roth
+              '#f59e0b': 'amber',   // taxable
+              '#8b5cf6': 'purple',  // hsa/fhsa
+              '#6366f1': 'purple',  // lira/lif
+            };
+            const cardColor = colorMap[group.color] || 'blue';
+
+            return (
+              <ExpandableStatCard
+                key={group.id}
+                title={group.label}
+                value={formatCurrency(amount)}
+                subtitle={`${percentage.toFixed(0)}% of portfolio`}
+                color={cardColor}
+                formula={`Sum of ${group.accountTypes.map(t => countryConfig.getAccountTypeLabel(t)).join(' + ')} balances`}
+                details={<p>{group.description}</p>}
+              />
+            );
+          }).slice(0, 3)}
         </div>
       </div>
 
@@ -327,7 +309,9 @@ export function SummaryCards({
             value={formatCurrency(lifetimeTaxesPaid)}
             subtitle="Total taxes in retirement"
             color="purple"
-            formula="Sum of federal + state taxes across all retirement years"
+            formula={country === 'CA'
+              ? 'Sum of federal + provincial taxes across all retirement years'
+              : 'Sum of federal + state taxes across all retirement years'}
             details={
               <div>
                 <p className="mb-1">
@@ -335,7 +319,7 @@ export function SummaryCards({
                 </p>
                 <ul className="space-y-0.5 mb-2">
                   <li>Federal taxes: {formatCurrency(yearlyWithdrawals.reduce((sum, y) => sum + y.federalTax, 0))}</li>
-                  <li>State taxes: {formatCurrency(yearlyWithdrawals.reduce((sum, y) => sum + y.stateTax, 0))}</li>
+                  <li>{country === 'CA' ? 'Provincial' : 'State'} taxes: {formatCurrency(yearlyWithdrawals.reduce((sum, y) => sum + y.stateTax, 0))}</li>
                 </ul>
                 <p>
                   Average effective tax rate: {formatPercent(avgEffectiveTaxRate)}

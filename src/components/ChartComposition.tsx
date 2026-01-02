@@ -6,8 +6,8 @@ import {
   Legend,
   Tooltip,
 } from 'recharts';
-import { Account, AccumulationResult, getTaxTreatment, TaxTreatment } from '../types';
-import { CHART_COLORS } from '../utils/constants';
+import { Account, AccumulationResult } from '../types';
+import { useCountry } from '../contexts/CountryContext';
 
 interface ChartCompositionProps {
   accounts: Account[];
@@ -22,13 +22,6 @@ function formatCurrency(value: number): string {
     maximumFractionDigits: 0,
   }).format(value);
 }
-
-const TAX_TREATMENT_LABELS: Record<TaxTreatment, string> = {
-  pretax: 'Pre-Tax',
-  roth: 'Roth (Tax-Free)',
-  taxable: 'Taxable',
-  hsa: 'HSA',
-};
 
 interface CustomTooltipProps {
   active?: boolean;
@@ -92,40 +85,48 @@ function renderCustomizedLabel(props: LabelProps) {
 }
 
 export function ChartComposition({ accounts, result, isDarkMode = false }: ChartCompositionProps) {
+  const { config: countryConfig } = useCountry();
   // Colors based on dark mode
   const labelColor = isDarkMode ? '#9ca3af' : '#374151';
-  // Create data by tax treatment
-  const taxTreatmentData = Object.entries(result.breakdownByTaxTreatment)
-    .filter(([treatment]) => result.breakdownByTaxTreatment[treatment as TaxTreatment] > 0)
-    .map(([treatment, value]) => ({
-      name: TAX_TREATMENT_LABELS[treatment as TaxTreatment],
-      value,
-      color: CHART_COLORS[treatment as TaxTreatment],
+
+  const accountGroupings = countryConfig.getAccountGroupings();
+
+  // Create data by account groupings
+  const groupData = accountGroupings
+    .filter(group => (result.breakdownByGroup[group.id] || 0) > 0)
+    .map(group => ({
+      name: group.label,
+      value: result.breakdownByGroup[group.id] || 0,
+      color: group.color,
     }));
 
   // Create data by individual account
+  // Find which group each account belongs to for coloring
   const accountData = accounts
-    .map(account => ({
-      name: account.name,
-      value: result.finalBalances[account.id] || 0,
-      color: CHART_COLORS[getTaxTreatment(account.type)],
-    }))
+    .map(account => {
+      const group = accountGroupings.find(g => g.accountTypes.includes(account.type));
+      return {
+        name: account.name,
+        value: result.finalBalances[account.id] || 0,
+        color: group?.color || '#3b82f6',
+      };
+    })
     .filter(d => d.value > 0);
 
   const total = result.totalAtRetirement;
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      {/* By Tax Treatment */}
+      {/* By Account Type */}
       <div>
         <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 text-center mb-2">
-          By Tax Treatment
+          By Account Type
         </h4>
         <div className="h-64 touch-pan-y">
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
-                data={taxTreatmentData}
+                data={groupData}
                 cx="50%"
                 cy="50%"
                 innerRadius={40}
@@ -135,7 +136,7 @@ export function ChartComposition({ accounts, result, isDarkMode = false }: Chart
                 labelLine={false}
                 label={renderCustomizedLabel}
               >
-                {taxTreatmentData.map((entry, index) => (
+                {groupData.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={entry.color} />
                 ))}
               </Pie>

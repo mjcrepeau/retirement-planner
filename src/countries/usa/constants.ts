@@ -1,4 +1,4 @@
-import { TaxBracket, RMDEntry } from '../types';
+import type { TaxBracket, RMDEntry } from '../../types';
 
 // 2024 Federal Tax Brackets - Married Filing Jointly
 export const TAX_BRACKETS_MFJ: TaxBracket[] = [
@@ -42,7 +42,7 @@ export const CAPITAL_GAINS_BRACKETS_SINGLE: TaxBracket[] = [
 // RMD starts at age 73 (SECURE 2.0 Act)
 export const RMD_START_AGE = 73;
 
-// IRS Uniform Lifetime Table (simplified version)
+// IRS Uniform Lifetime Table
 export const RMD_TABLE: RMDEntry[] = [
   { age: 73, divisor: 26.5 },
   { age: 74, divisor: 25.5 },
@@ -94,41 +94,57 @@ export const RMD_TABLE: RMDEntry[] = [
   { age: 120, divisor: 2.0 },
 ];
 
-export function getRMDDivisor(age: number): number {
-  if (age < RMD_START_AGE) return 0;
-  const entry = RMD_TABLE.find(e => e.age === age);
-  if (entry) return entry.divisor;
-  // For ages beyond the table, use the last value
-  if (age > 120) return 2.0;
-  return 0;
-}
-
-// Chart colors
-export const CHART_COLORS = {
-  pretax: '#3b82f6', // blue
-  roth: '#10b981', // green
-  taxable: '#f59e0b', // amber
-  hsa: '#8b5cf6', // purple
-  tax: '#ef4444', // red
-  socialSecurity: '#6366f1', // indigo
-  spending: '#0d9488', // teal
-};
-
-// Default values for new app state
-export const DEFAULT_PROFILE = {
-  country: 'US' as const,
-  currentAge: 35,
-  retirementAge: 65,
-  lifeExpectancy: 90,
-  region: 'CA', // California
-  filingStatus: 'married_filing_jointly' as const,
-  stateTaxRate: 0.05,
-  socialSecurityBenefit: 30000,
-  socialSecurityStartAge: 67,
-};
-
-export const DEFAULT_ASSUMPTIONS = {
-  inflationRate: 0.03,
-  safeWithdrawalRate: 0.04,
-  retirementReturnRate: 0.05,
-};
+// US States
+export const US_STATES = [
+  { code: 'AL', name: 'Alabama' },
+  { code: 'AK', name: 'Alaska' },
+  { code: 'AZ', name: 'Arizona' },
+  { code: 'AR', name: 'Arkansas' },
+  { code: 'CA', name: 'California' },
+  { code: 'CO', name: 'Colorado' },
+  { code: 'CT', name: 'Connecticut' },
+  { code: 'DE', name: 'Delaware' },
+  { code: 'FL', name: 'Florida' },
+  { code: 'GA', name: 'Georgia' },
+  { code: 'HI', name: 'Hawaii' },
+  { code: 'ID', name: 'Idaho' },
+  { code: 'IL', name: 'Illinois' },
+  { code: 'IN', name: 'Indiana' },
+  { code: 'IA', name: 'Iowa' },
+  { code: 'KS', name: 'Kansas' },
+  { code: 'KY', name: 'Kentucky' },
+  { code: 'LA', name: 'Louisiana' },
+  { code: 'ME', name: 'Maine' },
+  { code: 'MD', name: 'Maryland' },
+  { code: 'MA', name: 'Massachusetts' },
+  { code: 'MI', name: 'Michigan' },
+  { code: 'MN', name: 'Minnesota' },
+  { code: 'MS', name: 'Mississippi' },
+  { code: 'MO', name: 'Missouri' },
+  { code: 'MT', name: 'Montana' },
+  { code: 'NE', name: 'Nebraska' },
+  { code: 'NV', name: 'Nevada' },
+  { code: 'NH', name: 'New Hampshire' },
+  { code: 'NJ', name: 'New Jersey' },
+  { code: 'NM', name: 'New Mexico' },
+  { code: 'NY', name: 'New York' },
+  { code: 'NC', name: 'North Carolina' },
+  { code: 'ND', name: 'North Dakota' },
+  { code: 'OH', name: 'Ohio' },
+  { code: 'OK', name: 'Oklahoma' },
+  { code: 'OR', name: 'Oregon' },
+  { code: 'PA', name: 'Pennsylvania' },
+  { code: 'RI', name: 'Rhode Island' },
+  { code: 'SC', name: 'South Carolina' },
+  { code: 'SD', name: 'South Dakota' },
+  { code: 'TN', name: 'Tennessee' },
+  { code: 'TX', name: 'Texas' },
+  { code: 'UT', name: 'Utah' },
+  { code: 'VT', name: 'Vermont' },
+  { code: 'VA', name: 'Virginia' },
+  { code: 'WA', name: 'Washington' },
+  { code: 'WV', name: 'West Virginia' },
+  { code: 'WI', name: 'Wisconsin' },
+  { code: 'WY', name: 'Wyoming' },
+  { code: 'DC', name: 'District of Columbia' },
+];

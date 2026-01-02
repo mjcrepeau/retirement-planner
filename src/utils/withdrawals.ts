@@ -14,6 +14,7 @@ import {
   getStandardDeduction,
 } from './taxes';
 import { getRMDDivisor, RMD_START_AGE } from './constants';
+import type { CountryConfig } from '../countries';
 
 interface AccountState {
   id: string;
@@ -24,8 +25,18 @@ interface AccountState {
 
 /**
  * Calculate Required Minimum Distribution for traditional accounts
+ * Uses country-specific logic if CountryConfig provided
  */
-function calculateRMD(age: number, traditionalBalance: number): number {
+function calculateRMD(
+  age: number,
+  traditionalBalance: number,
+  accountType: string,
+  countryConfig?: CountryConfig
+): number {
+  if (countryConfig) {
+    return countryConfig.getMinimumWithdrawal(age, traditionalBalance, accountType);
+  }
+  // Fallback to US RMD logic
   if (age < RMD_START_AGE) return 0;
   const divisor = getRMDDivisor(age);
   if (divisor <= 0) return 0;
@@ -39,7 +50,8 @@ export function calculateWithdrawals(
   accounts: Account[],
   profile: Profile,
   assumptions: Assumptions,
-  accumulationResult: AccumulationResult
+  accumulationResult: AccumulationResult,
+  countryConfig?: CountryConfig
 ): RetirementResult {
   const retirementYears = profile.lifeExpectancy - profile.retirementAge;
   const currentYear = new Date().getFullYear();
@@ -80,24 +92,37 @@ export function calculateWithdrawals(
       portfolioDepletionAge = age;
     }
 
-    // Calculate Social Security income
-    let socialSecurityIncome = 0;
-    if (
-      profile.socialSecurityBenefit &&
-      profile.socialSecurityStartAge &&
-      age >= profile.socialSecurityStartAge
-    ) {
-      // Adjust SS for inflation from today to that year
+    // Calculate government retirement benefits (Social Security, CPP/OAS, etc.)
+    let governmentBenefits = 0;
+    if (countryConfig) {
+      const benefits = countryConfig.calculateRetirementBenefits(profile, age, 0);
+      governmentBenefits = benefits.reduce((sum, b) => sum + b.annualAmount, 0);
+      // Adjust for inflation
       const yearsFromNow = age - profile.currentAge;
-      socialSecurityIncome = profile.socialSecurityBenefit *
-        Math.pow(1 + assumptions.inflationRate, yearsFromNow);
+      governmentBenefits *= Math.pow(1 + assumptions.inflationRate, yearsFromNow);
+    } else {
+      // Fallback to US Social Security
+      if (
+        profile.socialSecurityBenefit &&
+        profile.socialSecurityStartAge &&
+        age >= profile.socialSecurityStartAge
+      ) {
+        const yearsFromNow = age - profile.currentAge;
+        governmentBenefits = profile.socialSecurityBenefit *
+          Math.pow(1 + assumptions.inflationRate, yearsFromNow);
+      }
     }
+    const socialSecurityIncome = governmentBenefits; // Keep variable name for compatibility
 
-    // Calculate RMD for traditional accounts
-    const traditionalBalance = accountStates
+    // Calculate minimum required withdrawals (RMD/RRIF) for each traditional account
+    let totalMinimumWithdrawal = 0;
+    accountStates
       .filter(acc => isTraditional(acc.type))
-      .reduce((sum, acc) => sum + acc.balance, 0);
-    const rmdAmount = calculateRMD(age, traditionalBalance);
+      .forEach(acc => {
+        const minWithdrawal = calculateRMD(age, acc.balance, acc.type, countryConfig);
+        totalMinimumWithdrawal += minWithdrawal;
+      });
+    const rmdAmount = totalMinimumWithdrawal;
 
     // Tax-optimized withdrawal strategy
     const withdrawals = performTaxOptimizedWithdrawal(
@@ -122,11 +147,11 @@ export function calculateWithdrawals(
     const federalTax = calculateTotalFederalTax(
       ordinaryIncome,
       capitalGains,
-      profile.filingStatus
+      profile.filingStatus || 'single'
     );
     const stateTax = calculateStateTax(
-      ordinaryIncome + capitalGains - getStandardDeduction(profile.filingStatus),
-      profile.stateTaxRate
+      ordinaryIncome + capitalGains - getStandardDeduction(profile.filingStatus || 'single'),
+      profile.stateTaxRate || 0
     );
     const totalTax = federalTax + stateTax;
     lifetimeTaxesPaid += totalTax;
@@ -250,8 +275,9 @@ function performTaxOptimizedWithdrawal(
 
   // Step 2: Fill up to 12% bracket with additional traditional withdrawals
   // (Standard deduction + 12% bracket gives good tax efficiency)
-  const standardDeduction = getStandardDeduction(profile.filingStatus);
-  const bracket12Max = profile.filingStatus === 'married_filing_jointly' ? 94300 : 47150;
+  const filingStatus = profile.filingStatus || 'single';
+  const standardDeduction = getStandardDeduction(filingStatus);
+  const bracket12Max = filingStatus === 'married_filing_jointly' ? 94300 : 47150;
   const targetOrdinaryIncome = standardDeduction + bracket12Max;
   const currentOrdinaryIncome = result.traditionalWithdrawal + socialSecurityIncome * 0.85;
   const roomIn12Bracket = Math.max(0, targetOrdinaryIncome - currentOrdinaryIncome);

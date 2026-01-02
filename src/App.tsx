@@ -3,6 +3,7 @@ import { Account, Profile, Assumptions } from './types';
 import { DEFAULT_PROFILE, DEFAULT_ASSUMPTIONS } from './utils/constants';
 import { useRetirementCalc } from './hooks/useRetirementCalc';
 import { useLocalStorage, useDarkMode } from './hooks/useLocalStorage';
+import { useCountry } from './contexts/CountryContext';
 import { Layout } from './components/Layout';
 import { AccountList } from './components/AccountList';
 import { ProfileForm } from './components/ProfileForm';
@@ -45,6 +46,9 @@ const createDefaultAccounts = (): Account[] => [
 type TabType = 'accumulation' | 'retirement' | 'summary' | 'methodology';
 
 function App() {
+  // Country context
+  const { config: countryConfig } = useCountry();
+
   // Use localStorage for persistence
   const [accounts, setAccounts, resetAccounts] = useLocalStorage<Account[]>(
     'retirement-planner-accounts',
@@ -67,7 +71,7 @@ function App() {
   const [expandedSection, setExpandedSection] = useState<string | null>('accounts');
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
-  const { accumulation, retirement } = useRetirementCalc(accounts, profile, assumptions);
+  const { accumulation, retirement } = useRetirementCalc(accounts, profile, assumptions, countryConfig);
 
   const handleAddAccount = (account: Account) => {
     setAccounts(prev => [...prev, account]);
