@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Account, AccountType, getAccountTypeLabel, is401k } from '../types';
 import { NumberInput } from './NumberInput';
+import { Tooltip } from './Tooltip';
 import { v4 as uuidv4 } from 'uuid';
 
 interface AccountFormProps {
@@ -159,9 +160,7 @@ export function AccountForm({ account, onSave, onCancel }: AccountFormProps) {
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Contribution Growth Rate (%)
-            <span className="text-gray-500 dark:text-gray-400 text-xs ml-1" title="Annual increase in contributions (e.g., salary raises)">
-              ⓘ
-            </span>
+            <Tooltip text="Annual increase in contributions (e.g., salary raises)" />
           </label>
           <NumberInput
             value={formData.contributionGrowthRate}
@@ -199,9 +198,7 @@ export function AccountForm({ account, onSave, onCancel }: AccountFormProps) {
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Match Percentage (%)
-                <span className="text-gray-500 dark:text-gray-400 text-xs ml-1" title="What percent of your contribution does employer match?">
-                  ⓘ
-                </span>
+                <Tooltip text="What percent of your contribution does employer match?" />
               </label>
               <NumberInput
                 value={formData.employerMatchPercent || 0}
@@ -218,9 +215,7 @@ export function AccountForm({ account, onSave, onCancel }: AccountFormProps) {
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Match Limit ($)
-                <span className="text-gray-500 dark:text-gray-400 text-xs ml-1" title="Maximum annual employer match in dollars">
-                  ⓘ
-                </span>
+                <Tooltip text="Maximum annual employer match in dollars" />
               </label>
               <NumberInput
                 value={formData.employerMatchLimit || 0}

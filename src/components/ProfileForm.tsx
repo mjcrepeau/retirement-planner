@@ -1,5 +1,6 @@
 import { Profile, FilingStatus } from '../types';
 import { NumberInput } from './NumberInput';
+import { Tooltip } from './Tooltip';
 
 interface ProfileFormProps {
   profile: Profile;
@@ -100,9 +101,7 @@ export function ProfileForm({ profile, onChange }: ProfileFormProps) {
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Annual Benefit (today's $)
-            <span className="text-gray-500 text-xs ml-1" title="Your estimated annual Social Security benefit in today's dollars">
-              ⓘ
-            </span>
+            <Tooltip text="Your estimated annual Social Security benefit in today's dollars" />
           </label>
           <NumberInput
             value={profile.socialSecurityBenefit || 0}

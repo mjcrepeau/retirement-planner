@@ -1,5 +1,6 @@
 import { Assumptions } from '../types';
 import { NumberInput } from './NumberInput';
+import { Tooltip } from './Tooltip';
 
 interface AssumptionsFormProps {
   assumptions: Assumptions;
@@ -24,9 +25,7 @@ export function AssumptionsForm({ assumptions, onChange }: AssumptionsFormProps)
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Inflation Rate (%)
-            <span className="text-gray-500 dark:text-gray-400 text-xs ml-1" title="Expected annual inflation rate">
-              ⓘ
-            </span>
+            <Tooltip text="Expected annual inflation rate" />
           </label>
           <NumberInput
             value={assumptions.inflationRate}
@@ -44,9 +43,7 @@ export function AssumptionsForm({ assumptions, onChange }: AssumptionsFormProps)
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Safe Withdrawal Rate (%)
-            <span className="text-gray-500 dark:text-gray-400 text-xs ml-1" title="Percentage of portfolio to withdraw annually in retirement">
-              ⓘ
-            </span>
+            <Tooltip text="Percentage of portfolio to withdraw annually in retirement" />
           </label>
           <NumberInput
             value={assumptions.safeWithdrawalRate}
@@ -64,9 +61,7 @@ export function AssumptionsForm({ assumptions, onChange }: AssumptionsFormProps)
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Retirement Return Rate (%)
-            <span className="text-gray-500 dark:text-gray-400 text-xs ml-1" title="Expected annual return during retirement (typically more conservative)">
-              ⓘ
-            </span>
+            <Tooltip text="Expected annual return during retirement (typically more conservative)" />
           </label>
           <NumberInput
             value={assumptions.retirementReturnRate}
