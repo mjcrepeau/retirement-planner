@@ -1221,6 +1221,86 @@ function testTotalFederalTaxIntegration(): void {
 }
 
 // =============================================================================
+// CANADIAN CALCULATION TESTS
+// =============================================================================
+
+const caConfig = getCountryConfig('CA');
+
+function testCanadianCalculations(): void {
+  section('CANADIAN CALCULATIONS');
+
+  console.log('\n--- Canadian Federal Tax Brackets ---');
+
+  // Canadian federal tax on $50,000 income
+  // Basic personal amount: $15,705
+  // Taxable: $50,000 - $15,705 = $34,295
+  // 15% on first $53,359 = $34,295 * 0.15 = $5,144.25
+  const caTax1 = caConfig.calculateFederalTax(50000);
+  assert(caTax1 > 0 && caTax1 < 10000, `CA federal tax on $50k is reasonable (got $${caTax1.toFixed(2)})`);
+
+  // Higher income bracket test
+  const caTax2 = caConfig.calculateFederalTax(100000);
+  assert(caTax2 > caTax1, `CA federal tax on $100k (${caTax2.toFixed(0)}) > $50k (${caTax1.toFixed(0)})`);
+
+  console.log('\n--- Canadian Account Type Recognition ---');
+
+  // Test traditional account recognition
+  assert(caConfig.isTraditionalAccount('rrsp'), 'RRSP is recognized as traditional');
+  assert(caConfig.isTraditionalAccount('rrif'), 'RRIF is recognized as traditional');
+  assert(caConfig.isTraditionalAccount('lira'), 'LIRA is recognized as traditional');
+  assert(caConfig.isTraditionalAccount('lif'), 'LIF is recognized as traditional');
+  assert(!caConfig.isTraditionalAccount('tfsa'), 'TFSA is NOT traditional');
+  assert(!caConfig.isTraditionalAccount('non_registered'), 'Non-registered is NOT traditional');
+
+  console.log('\n--- Canadian RRIF Minimum Withdrawals ---');
+
+  // RRIF minimums at age 71 = 5.28%
+  const rrifMin71 = caConfig.getMinimumWithdrawal(71, 100000, 'rrif');
+  assertApprox(rrifMin71, 5280, 10, 'RRIF min at 71 = 5.28% of $100k');
+
+  // RRIF minimums at age 80 = 6.82%
+  const rrifMin80 = caConfig.getMinimumWithdrawal(80, 100000, 'rrif');
+  assertApprox(rrifMin80, 6820, 10, 'RRIF min at 80 = 6.82% of $100k');
+
+  // No minimum before 71 for RRSP
+  const rrspMin65 = caConfig.getMinimumWithdrawal(65, 100000, 'rrsp');
+  assertApprox(rrspMin65, 0, 0.01, 'No RRSP minimum at age 65');
+
+  console.log('\n--- Canadian Accumulation with RRSP ---');
+
+  const rrspAccount: Account = {
+    id: 'rrsp1',
+    name: 'RRSP',
+    type: 'rrsp',
+    balance: 100000,
+    annualContribution: 10000,
+    contributionGrowthRate: 0,
+    returnRate: 0.07,
+  };
+
+  const caProfile: Profile = {
+    country: 'CA',
+    currentAge: 30,
+    retirementAge: 31,
+    lifeExpectancy: 90,
+    region: 'ON',
+  };
+
+  const caResult = calculateAccumulation([rrspAccount], caProfile, caConfig);
+
+  // After 1 year at 7%: $100,000 * 1.07 + $10,000 = $117,000
+  assertApprox(caResult.totalAtRetirement, 117000, 0.01, 'CA RRSP growth calculation');
+
+  console.log('\n--- Canadian Account Groupings ---');
+
+  const caGroups = caConfig.getAccountGroupings();
+  assert(caGroups.length > 0, 'CA has account groupings defined');
+
+  const rrifGroup = caGroups.find(g => g.accountTypes.includes('rrif'));
+  assert(rrifGroup !== undefined, 'RRIF has a grouping');
+}
+
+// =============================================================================
 // RUN ALL TESTS
 // =============================================================================
 
@@ -1241,6 +1321,7 @@ function runAllTests(): void {
   testInflationConsistency();
   testPortfolioDepletion();
   testTotalFederalTaxIntegration();
+  testCanadianCalculations();
 
   console.log('\n' + '='.repeat(60));
   console.log('TEST SUMMARY');
