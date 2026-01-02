@@ -140,19 +140,48 @@ export function calculateWithdrawals(
       acc.balance *= (1 + assumptions.retirementReturnRate);
     });
 
-    // Calculate taxes
-    const ordinaryIncome = withdrawals.traditionalWithdrawal + socialSecurityIncome * 0.85; // 85% of SS taxable
+    // Calculate taxes using country-specific logic
+    const ordinaryIncome = withdrawals.traditionalWithdrawal + socialSecurityIncome * 0.85; // 85% of SS/CPP taxable
     const capitalGains = withdrawals.taxableGains;
 
-    const federalTax = calculateTotalFederalTax(
-      ordinaryIncome,
-      capitalGains,
-      profile.filingStatus || 'single'
-    );
-    const stateTax = calculateStateTax(
-      ordinaryIncome + capitalGains - getStandardDeduction(profile.filingStatus || 'single'),
-      profile.stateTaxRate || 0
-    );
+    let federalTax: number;
+    let stateTax: number;
+
+    if (countryConfig) {
+      // Use country-specific tax calculations
+      federalTax = countryConfig.calculateFederalTax(ordinaryIncome, profile.filingStatus);
+      // Add capital gains tax (country handles inclusion rates)
+      federalTax += countryConfig.calculateCapitalGainsTax(
+        capitalGains,
+        ordinaryIncome,
+        profile.region || '',
+        profile.filingStatus
+      );
+      // Calculate regional (state/provincial) tax
+      stateTax = countryConfig.calculateRegionalTax(
+        ordinaryIncome + capitalGains,
+        profile.region || ''
+      );
+      // For US, regional tax is still calculated using flat rate from profile
+      // (the US config returns 0 from calculateRegionalTax)
+      if (countryConfig.code === 'US') {
+        stateTax = calculateStateTax(
+          ordinaryIncome + capitalGains - getStandardDeduction(profile.filingStatus || 'single'),
+          profile.stateTaxRate || 0
+        );
+      }
+    } else {
+      // Fallback to US logic
+      federalTax = calculateTotalFederalTax(
+        ordinaryIncome,
+        capitalGains,
+        profile.filingStatus || 'single'
+      );
+      stateTax = calculateStateTax(
+        ordinaryIncome + capitalGains - getStandardDeduction(profile.filingStatus || 'single'),
+        profile.stateTaxRate || 0
+      );
+    }
     const totalTax = federalTax + stateTax;
     lifetimeTaxesPaid += totalTax;
 
