@@ -16,6 +16,10 @@ import {
 } from '../utils/taxes';
 import { getRMDDivisor } from '../utils/constants';
 import { Account, Profile, Assumptions } from '../types';
+import { getCountryConfig } from '../countries';
+
+// Get US config for tests
+const usConfig = getCountryConfig('US');
 
 // Test utilities
 let passedTests = 0;
@@ -179,7 +183,7 @@ function testAccumulationPhase(): void {
     stateTaxRate: 0.05,
   };
 
-  const result1 = calculateAccumulation([account1], profile1);
+  const result1 = calculateAccumulation([account1], profile1, usConfig);
 
   // After 1 year at 7%: $100,000 * 1.07 = $107,000
   assertApprox(result1.totalAtRetirement, 107000, 0.01, '$100k at 7% for 1 year = $107,000');
@@ -191,7 +195,7 @@ function testAccumulationPhase(): void {
     retirementAge: 40, // 10 years
   };
 
-  const result2 = calculateAccumulation([account1], profile2);
+  const result2 = calculateAccumulation([account1], profile2, usConfig);
 
   // After 10 years at 7%: $100,000 * (1.07)^10 = $196,715.14
   const expected10yr = 100000 * Math.pow(1.07, 10);
@@ -210,7 +214,7 @@ function testAccumulationPhase(): void {
     retirementAge: 31, // 1 year
   };
 
-  const result3 = calculateAccumulation([account2], profile3);
+  const result3 = calculateAccumulation([account2], profile3, usConfig);
 
   // Year 1: $100,000 * 1.07 + $10,000 = $117,000
   assertApprox(result3.totalAtRetirement, 117000, 0.01, '$100k + $10k contribution at 7% = $117,000');
@@ -223,7 +227,7 @@ function testAccumulationPhase(): void {
     employerMatchLimit: 3000, // Up to $3000
   };
 
-  const result4 = calculateAccumulation([account3], profile3);
+  const result4 = calculateAccumulation([account3], profile3, usConfig);
 
   // Match = min($10,000 * 0.5, $3000) = $3,000
   // Year 1: $100,000 * 1.07 + $10,000 + $3,000 = $120,000
@@ -247,7 +251,7 @@ function testAccumulationPhase(): void {
     retirementAge: 32, // 2 years
   };
 
-  const result5 = calculateAccumulation([account4], profile4);
+  const result5 = calculateAccumulation([account4], profile4, usConfig);
 
   // Year 1: $0 * 1.07 + $10,000 = $10,000
   // Year 2: $10,000 * 1.07 + $10,300 = $21,000
@@ -276,10 +280,10 @@ function testAccumulationPhase(): void {
     },
   ];
 
-  const result6 = calculateAccumulation(accounts, profile3);
+  const result6 = calculateAccumulation(accounts, profile3, usConfig);
 
-  assertApprox(result6.breakdownByTaxTreatment.pretax, 100000, 0.01, 'Pre-tax = $100,000');
-  assertApprox(result6.breakdownByTaxTreatment.roth, 50000, 0.01, 'Roth = $50,000');
+  assertApprox(result6.breakdownByGroup.traditional, 100000, 0.01, 'Traditional = $100,000');
+  assertApprox(result6.breakdownByGroup.roth, 50000, 0.01, 'Roth = $50,000');
   assertApprox(result6.totalAtRetirement, 150000, 0.01, 'Total = $150,000');
 }
 
@@ -316,8 +320,8 @@ function testWithdrawalPhase(): void {
     retirementReturnRate: 0,
   };
 
-  const accumulation = calculateAccumulation([account], profile);
-  const result = calculateWithdrawals([account], profile, assumptions, accumulation);
+  const accumulation = calculateAccumulation([account], profile, usConfig);
+  const result = calculateWithdrawals([account], profile, assumptions, accumulation, usConfig);
 
   // 4% of $1M = $40,000 annual withdrawal
   assertApprox(result.sustainableAnnualWithdrawal, 40000, 0.01, '4% SWR on $1M = $40,000/year');
@@ -355,8 +359,8 @@ function testWithdrawalPhase(): void {
     stateTaxRate: 0.05,
   };
 
-  const accumulation2 = calculateAccumulation(accounts, profile2);
-  const result2 = calculateWithdrawals(accounts, profile2, assumptions, accumulation2);
+  const accumulation2 = calculateAccumulation(accounts, profile2, usConfig);
+  const result2 = calculateWithdrawals(accounts, profile2, assumptions, accumulation2, usConfig);
 
   assert(result2.yearlyWithdrawals.length > 0, 'Has withdrawal data');
 
@@ -381,8 +385,8 @@ function testWithdrawalPhase(): void {
     retirementReturnRate: 0,
   };
 
-  const accumulationSS = calculateAccumulation([account], profileSS);
-  const resultSS = calculateWithdrawals([account], profileSS, assumptionsSS, accumulationSS);
+  const accumulationSS = calculateAccumulation([account], profileSS, usConfig);
+  const resultSS = calculateWithdrawals([account], profileSS, assumptionsSS, accumulationSS, usConfig);
 
   // At age 65-66: No SS, full withdrawal needed
   // At age 67: SS kicks in, withdrawal should decrease
@@ -426,8 +430,8 @@ function testWithdrawalPhase(): void {
     retirementReturnRate: 0,
   };
 
-  const accumulationRMD = calculateAccumulation([account], profileRMD);
-  const resultRMD = calculateWithdrawals([account], profileRMD, assumptionsRMD, accumulationRMD);
+  const accumulationRMD = calculateAccumulation([account], profileRMD, usConfig);
+  const resultRMD = calculateWithdrawals([account], profileRMD, assumptionsRMD, accumulationRMD, usConfig);
 
   const age73 = resultRMD.yearlyWithdrawals.find(y => y.age === 73);
 
@@ -581,7 +585,7 @@ function testEdgeCases(): void {
     stateTaxRate: 0.05,
   };
 
-  const result = calculateAccumulation([emptyAccount], profile);
+  const result = calculateAccumulation([emptyAccount], profile, usConfig);
   assertApprox(result.totalAtRetirement, 0, 0.01, 'Empty account stays at $0');
 
   console.log('\n--- Very Short Retirement ---');
@@ -608,8 +612,8 @@ function testEdgeCases(): void {
     retirementReturnRate: 0.05,
   };
 
-  const accumulation = calculateAccumulation([account], shortProfile);
-  const withdrawal = calculateWithdrawals([account], shortProfile, assumptions, accumulation);
+  const accumulation = calculateAccumulation([account], shortProfile, usConfig);
+  const withdrawal = calculateWithdrawals([account], shortProfile, assumptions, accumulation, usConfig);
 
   assert(withdrawal.yearlyWithdrawals.length >= 1, 'Has at least 1 year of withdrawals');
 
@@ -621,7 +625,7 @@ function testEdgeCases(): void {
     lifeExpectancy: 100, // 60 years of retirement
   };
 
-  const longResult = calculateWithdrawals([account], longProfile, assumptions, calculateAccumulation([account], longProfile));
+  const longResult = calculateWithdrawals([account], longProfile, assumptions, calculateAccumulation([account], longProfile, usConfig), usConfig);
 
   assert(longResult.yearlyWithdrawals.length === 61, 'Has 61 years of withdrawal data (40-100 inclusive)');
 
@@ -632,7 +636,7 @@ function testEdgeCases(): void {
     returnRate: 0.15, // 15% return
   };
 
-  const highReturnResult = calculateAccumulation([highReturnAccount], profile);
+  const highReturnResult = calculateAccumulation([highReturnAccount], profile, usConfig);
   assert(highReturnResult.totalAtRetirement > account.balance, 'High return grows portfolio');
 
   console.log('\n--- Multiple Account Types ---');
@@ -646,13 +650,13 @@ function testEdgeCases(): void {
     { id: '6', name: 'HSA', type: 'hsa', balance: 100000, annualContribution: 0, contributionGrowthRate: 0, returnRate: 0 },
   ];
 
-  const mixedResult = calculateAccumulation(mixedAccounts, shortProfile);
+  const mixedResult = calculateAccumulation(mixedAccounts, shortProfile, usConfig);
 
   assertApprox(mixedResult.totalAtRetirement, 600000, 0.01, 'Total of all accounts = $600,000');
-  assertApprox(mixedResult.breakdownByTaxTreatment.pretax, 200000, 0.01, 'Pre-tax (trad 401k + IRA) = $200,000');
-  assertApprox(mixedResult.breakdownByTaxTreatment.roth, 200000, 0.01, 'Roth (roth 401k + IRA) = $200,000');
-  assertApprox(mixedResult.breakdownByTaxTreatment.taxable, 100000, 0.01, 'Taxable = $100,000');
-  assertApprox(mixedResult.breakdownByTaxTreatment.hsa, 100000, 0.01, 'HSA = $100,000');
+  assertApprox(mixedResult.breakdownByGroup.traditional, 200000, 0.01, 'Traditional (trad 401k + IRA) = $200,000');
+  assertApprox(mixedResult.breakdownByGroup.roth, 200000, 0.01, 'Roth (roth 401k + IRA) = $200,000');
+  assertApprox(mixedResult.breakdownByGroup.taxable, 100000, 0.01, 'Taxable = $100,000');
+  assertApprox(mixedResult.breakdownByGroup.hsa, 100000, 0.01, 'HSA = $100,000');
 }
 
 // =============================================================================
@@ -753,8 +757,8 @@ function testWithdrawalStrategyDetails(): void {
     retirementReturnRate: 0,
   };
 
-  const accumulation = calculateAccumulation([account], profile);
-  const result = calculateWithdrawals([account], profile, assumptions, accumulation);
+  const accumulation = calculateAccumulation([account], profile, usConfig);
+  const result = calculateWithdrawals([account], profile, assumptions, accumulation, usConfig);
 
   const year1 = result.yearlyWithdrawals[0];
 
@@ -813,8 +817,8 @@ function testWithdrawalStrategyDetails(): void {
     retirementReturnRate: 0,
   };
 
-  const mixedAccum = calculateAccumulation(mixedAccounts, mixedProfile);
-  const mixedResult = calculateWithdrawals(mixedAccounts, mixedProfile, mixedAssumptions, mixedAccum);
+  const mixedAccum = calculateAccumulation(mixedAccounts, mixedProfile, usConfig);
+  const mixedResult = calculateWithdrawals(mixedAccounts, mixedProfile, mixedAssumptions, mixedAccum, usConfig);
 
   const mixedYear1 = mixedResult.yearlyWithdrawals[0];
 
@@ -864,8 +868,8 @@ function testWithdrawalStrategyDetails(): void {
     retirementReturnRate: 0,
   };
 
-  const hsaAccum = calculateAccumulation(hsaAccounts, hsaProfile);
-  const hsaResult = calculateWithdrawals(hsaAccounts, hsaProfile, hsaAssumptions, hsaAccum);
+  const hsaAccum = calculateAccumulation(hsaAccounts, hsaProfile, usConfig);
+  const hsaResult = calculateWithdrawals(hsaAccounts, hsaProfile, hsaAssumptions, hsaAccum, usConfig);
 
   const hsaYear1 = hsaResult.yearlyWithdrawals[0];
 
@@ -908,8 +912,8 @@ function testCostBasisTracking(): void {
     retirementReturnRate: 0,
   };
 
-  const accumulation = calculateAccumulation([taxableAccount], profile);
-  const result = calculateWithdrawals([taxableAccount], profile, assumptions, accumulation);
+  const accumulation = calculateAccumulation([taxableAccount], profile, usConfig);
+  const result = calculateWithdrawals([taxableAccount], profile, assumptions, accumulation, usConfig);
 
   const year1 = result.yearlyWithdrawals[0];
 
@@ -932,8 +936,8 @@ function testCostBasisTracking(): void {
     retirementReturnRate: 0,
   };
 
-  const longAccum = calculateAccumulation([taxableAccount], longProfile);
-  const longResult = calculateWithdrawals([taxableAccount], longProfile, longAssumptions, longAccum);
+  const longAccum = calculateAccumulation([taxableAccount], longProfile, usConfig);
+  const longResult = calculateWithdrawals([taxableAccount], longProfile, longAssumptions, longAccum, usConfig);
 
   // Verify withdrawals continue until depleted
   let totalWithdrawn = 0;
@@ -978,8 +982,8 @@ function testRMDInteractions(): void {
     retirementReturnRate: 0,
   };
 
-  const accumulation = calculateAccumulation([largeTraditional], profile);
-  const result = calculateWithdrawals([largeTraditional], profile, assumptions, accumulation);
+  const accumulation = calculateAccumulation([largeTraditional], profile, usConfig);
+  const result = calculateWithdrawals([largeTraditional], profile, assumptions, accumulation, usConfig);
 
   const year73 = result.yearlyWithdrawals[0];
 
@@ -1016,7 +1020,7 @@ function testRMDInteractions(): void {
     },
   ];
 
-  const mixedResult = calculateWithdrawals(mixedAccounts, profile, assumptions, calculateAccumulation(mixedAccounts, profile));
+  const mixedResult = calculateWithdrawals(mixedAccounts, profile, assumptions, calculateAccumulation(mixedAccounts, profile, usConfig), usConfig);
 
   const mixedYear73 = mixedResult.yearlyWithdrawals[0];
 
@@ -1057,8 +1061,8 @@ function testInflationConsistency(): void {
     retirementReturnRate: 0,
   };
 
-  const accumulation = calculateAccumulation([account], profile);
-  const result = calculateWithdrawals([account], profile, assumptions, accumulation);
+  const accumulation = calculateAccumulation([account], profile, usConfig);
+  const result = calculateWithdrawals([account], profile, assumptions, accumulation, usConfig);
 
   // Year 1: $40k target
   // Year 2: $40k * 1.03 = $41,200
@@ -1083,8 +1087,8 @@ function testInflationConsistency(): void {
     socialSecurityStartAge: 67,
   };
 
-  const ssAccum = calculateAccumulation([account], ssProfile);
-  const ssResult = calculateWithdrawals([account], ssProfile, assumptions, ssAccum);
+  const ssAccum = calculateAccumulation([account], ssProfile, usConfig);
+  const ssResult = calculateWithdrawals([account], ssProfile, assumptions, ssAccum, usConfig);
 
   // SS starts at age 67
   // Years from current age (60) to 67 = 7 years
@@ -1130,8 +1134,8 @@ function testPortfolioDepletion(): void {
     retirementReturnRate: 0, // No growth
   };
 
-  const accumulation = calculateAccumulation([smallAccount], profile);
-  const result = calculateWithdrawals([smallAccount], profile, assumptions, accumulation);
+  const accumulation = calculateAccumulation([smallAccount], profile, usConfig);
+  const result = calculateWithdrawals([smallAccount], profile, assumptions, accumulation, usConfig);
 
   // $50k at 10% = $5k/year, plus 3% inflation
   // Year 1: $5,000
@@ -1155,8 +1159,8 @@ function testPortfolioDepletion(): void {
     retirementReturnRate: 0.05, // 5% returns beat inflation
   };
 
-  const largeAccum = calculateAccumulation([largeAccount], profile);
-  const largeResult = calculateWithdrawals([largeAccount], profile, sustainableAssumptions, largeAccum);
+  const largeAccum = calculateAccumulation([largeAccount], profile, usConfig);
+  const largeResult = calculateWithdrawals([largeAccount], profile, sustainableAssumptions, largeAccum, usConfig);
 
   assert(
     largeResult.portfolioDepletionAge === null,
