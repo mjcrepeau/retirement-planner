@@ -3,7 +3,8 @@ import { Account, Profile, Assumptions } from './types';
 import { DEFAULT_PROFILE, DEFAULT_ASSUMPTIONS } from './utils/constants';
 import { useRetirementCalc } from './hooks/useRetirementCalc';
 import { useLocalStorage, useDarkMode } from './hooks/useLocalStorage';
-import { useCountry } from './contexts/CountryContext';
+import { CountryProvider, useCountry } from './contexts/CountryContext';
+import { getCountryConfig, type CountryCode } from './countries';
 import { Layout } from './components/Layout';
 import { AccountList } from './components/AccountList';
 import { ProfileForm } from './components/ProfileForm';
@@ -19,8 +20,8 @@ import { DataTableAccumulation } from './components/DataTableAccumulation';
 import { DataTableWithdrawal } from './components/DataTableWithdrawal';
 import { v4 as uuidv4 } from 'uuid';
 
-// Default accounts for demonstration
-const createDefaultAccounts = (): Account[] => [
+// Default accounts for US
+const createUSDefaultAccounts = (): Account[] => [
   {
     id: uuidv4(),
     name: 'Company 401(k)',
@@ -43,9 +44,39 @@ const createDefaultAccounts = (): Account[] => [
   },
 ];
 
+// Default accounts for Canada
+const createCADefaultAccounts = (): Account[] => [
+  {
+    id: uuidv4(),
+    name: 'Employer RRSP',
+    type: 'employer_rrsp',
+    balance: 150000,
+    annualContribution: 15000,
+    contributionGrowthRate: 0.03,
+    returnRate: 0.07,
+    employerMatchPercent: 0.5,
+    employerMatchLimit: 3000,
+  },
+  {
+    id: uuidv4(),
+    name: 'TFSA',
+    type: 'tfsa',
+    balance: 40000,
+    annualContribution: 7000,
+    contributionGrowthRate: 0,
+    returnRate: 0.07,
+  },
+];
+
+// Get default accounts based on country
+const createDefaultAccounts = (country: CountryCode = 'US'): Account[] => {
+  return country === 'CA' ? createCADefaultAccounts() : createUSDefaultAccounts();
+};
+
 type TabType = 'accumulation' | 'retirement' | 'summary' | 'methodology';
 
-function App() {
+// Inner app component that uses the country context
+function AppContent() {
   // Country context
   const { config: countryConfig } = useCountry();
 
@@ -354,6 +385,31 @@ function App() {
         </div>
       </div>
     </Layout>
+  );
+}
+
+// Wrapper component that provides the CountryProvider with reset callback
+function App() {
+  const handleCountryChange = useCallback((newCountry: CountryCode) => {
+    // Reset to country-specific defaults
+    const countryConfig = getCountryConfig(newCountry);
+    const defaultProfile = countryConfig.getDefaultProfile();
+
+    // Clear localStorage and set new defaults
+    localStorage.setItem('retirement-planner-accounts', JSON.stringify(createDefaultAccounts(newCountry)));
+    localStorage.setItem('retirement-planner-profile', JSON.stringify({
+      ...DEFAULT_PROFILE,
+      ...defaultProfile,
+    }));
+
+    // Force reload to reinitialize with new country defaults
+    window.location.reload();
+  }, []);
+
+  return (
+    <CountryProvider initialCountry="US" onCountryChange={handleCountryChange}>
+      <AppContent />
+    </CountryProvider>
   );
 }
 

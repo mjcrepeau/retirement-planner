@@ -4,7 +4,7 @@ import { CountryCode, CountryConfig, getCountryConfig } from '../countries';
 interface CountryContextValue {
   country: CountryCode;
   config: CountryConfig;
-  setCountry: (country: CountryCode, resetProfile?: () => void) => void;
+  setCountry: (country: CountryCode) => void;
 }
 
 const CountryContext = createContext<CountryContextValue | undefined>(undefined);
@@ -12,6 +12,7 @@ const CountryContext = createContext<CountryContextValue | undefined>(undefined)
 interface CountryProviderProps {
   children: ReactNode;
   initialCountry?: CountryCode;
+  onCountryChange?: (newCountry: CountryCode) => void;
 }
 
 // Load country from localStorage or use default
@@ -27,7 +28,7 @@ const getInitialCountry = (defaultCountry: CountryCode): CountryCode => {
   return defaultCountry;
 };
 
-export function CountryProvider({ children, initialCountry = 'US' }: CountryProviderProps) {
+export function CountryProvider({ children, initialCountry = 'US', onCountryChange }: CountryProviderProps) {
   const [country, setCountryState] = useState<CountryCode>(() => getInitialCountry(initialCountry));
   const [config, setConfig] = useState<CountryConfig>(() => getCountryConfig(getInitialCountry(initialCountry)));
 
@@ -40,7 +41,9 @@ export function CountryProvider({ children, initialCountry = 'US' }: CountryProv
     }
   }, [country]);
 
-  const setCountry = useCallback((newCountry: CountryCode, resetProfile?: () => void) => {
+  const setCountry = useCallback((newCountry: CountryCode) => {
+    if (newCountry === country) return;
+
     // Show confirmation dialog if switching countries
     const confirmSwitch = window.confirm(
       `Switch to ${newCountry === 'US' ? 'United States' : 'Canada'}? This will reset your profile and accounts to default values.`
@@ -50,12 +53,12 @@ export function CountryProvider({ children, initialCountry = 'US' }: CountryProv
       setCountryState(newCountry);
       setConfig(getCountryConfig(newCountry));
 
-      // Reset profile to country defaults if callback provided
-      if (resetProfile) {
-        resetProfile();
+      // Call the country change callback to reset profile and accounts
+      if (onCountryChange) {
+        onCountryChange(newCountry);
       }
     }
-  }, []);
+  }, [country, onCountryChange]);
 
   return (
     <CountryContext.Provider value={{ country, config, setCountry }}>
