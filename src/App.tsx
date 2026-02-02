@@ -5,6 +5,7 @@ import { useRetirementCalc } from './hooks/useRetirementCalc';
 import { useLocalStorage, useDarkMode } from './hooks/useLocalStorage';
 import { CountryProvider, useCountry } from './contexts/CountryContext';
 import { getCountryConfig, type CountryCode } from './countries';
+import { getDefaultWithdrawalAge } from './utils/withdrawalDefaults';
 import { Layout } from './components/Layout';
 import { AccountList } from './components/AccountList';
 import { ProfileForm } from './components/ProfileForm';
@@ -73,6 +74,29 @@ const createDefaultAccounts = (country: CountryCode = 'US'): Account[] => {
   return country === 'CA' ? createCADefaultAccounts() : createUSDefaultAccounts();
 };
 
+/**
+ * Normalize accounts loaded from localStorage to add withdrawal rules if missing
+ * This ensures backwards compatibility with accounts saved before withdrawal rules were added
+ */
+function normalizeAccount(
+  account: Account,
+  profile: Profile
+): Account {
+  // If account already has withdrawal rules, return as-is
+  if (account.withdrawalRules) {
+    return account;
+  }
+
+  // Apply default withdrawal age based on account type and country config
+  const countryConfig = getCountryConfig(profile.country);
+  const defaultAge = getDefaultWithdrawalAge(account, profile.retirementAge, countryConfig);
+
+  return {
+    ...account,
+    withdrawalRules: { startAge: defaultAge },
+  };
+}
+
 type TabType = 'accumulation' | 'retirement' | 'summary' | 'methodology';
 
 // Inner app component that uses the country context
@@ -80,15 +104,33 @@ function AppContent() {
   // Country context
   const { config: countryConfig } = useCountry();
 
-  // Use localStorage for persistence
-  const [accounts, setAccounts, resetAccounts] = useLocalStorage<Account[]>(
-    'retirement-planner-accounts',
-    createDefaultAccounts()
-  );
+  // Load profile first (needed for account normalization)
   const [profile, setProfile, resetProfile] = useLocalStorage<Profile>(
     'retirement-planner-profile',
     DEFAULT_PROFILE
   );
+
+  // Use localStorage for accounts with normalization
+  const [rawAccounts, setRawAccounts, resetAccounts] = useLocalStorage<Account[]>(
+    'retirement-planner-accounts',
+    createDefaultAccounts()
+  );
+
+  // Normalize accounts to add withdrawal rules if missing (backwards compatibility)
+  const accounts = rawAccounts.map(account => normalizeAccount(account, profile));
+
+  // Wrapper for setAccounts that saves normalized accounts
+  const setAccounts = useCallback((value: Account[] | ((prev: Account[]) => Account[])) => {
+    if (typeof value === 'function') {
+      setRawAccounts(prev => {
+        const updated = value(prev);
+        return updated.map(account => normalizeAccount(account, profile));
+      });
+    } else {
+      setRawAccounts(value.map(account => normalizeAccount(account, profile)));
+    }
+  }, [setRawAccounts, profile]);
+
   const [assumptions, setAssumptions, resetAssumptions] = useLocalStorage<Assumptions>(
     'retirement-planner-assumptions',
     DEFAULT_ASSUMPTIONS
@@ -206,6 +248,7 @@ function AppContent() {
               <div className="px-4 pb-4">
                 <AccountList
                   accounts={accounts}
+                  profile={profile}
                   onAdd={handleAddAccount}
                   onUpdate={handleUpdateAccount}
                   onDelete={handleDeleteAccount}

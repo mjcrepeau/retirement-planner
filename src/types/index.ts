@@ -28,6 +28,16 @@ export type FilingStatus = 'single' | 'married_filing_jointly';
 
 export type TaxTreatment = 'pretax' | 'roth' | 'taxable' | 'hsa';
 
+export interface AccountWithdrawalRules {
+  startAge: number;  // Age when withdrawals can begin
+}
+
+export interface EarlyWithdrawalPenalty {
+  amount: number;      // Penalty amount in dollars
+  accountId: string;   // Which account triggered it
+  accountName: string; // For display purposes
+}
+
 export interface Account {
   id: string;
   name: string;
@@ -38,6 +48,7 @@ export interface Account {
   returnRate: number; // as decimal
   employerMatchPercent?: number; // 401k only, as decimal
   employerMatchLimit?: number; // 401k only, dollar amount
+  withdrawalRules?: AccountWithdrawalRules;  // Optional for backwards compatibility
 }
 
 export interface Profile {
@@ -91,6 +102,8 @@ export interface YearlyWithdrawal {
   targetSpending: number;
   rmdAmount: number;
   totalRemainingBalance: number;
+  earlyWithdrawalPenalties: EarlyWithdrawalPenalty[];
+  totalPenalties: number;
 }
 
 export interface RetirementResult {

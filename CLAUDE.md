@@ -42,6 +42,14 @@ This is a React retirement planning calculator that projects portfolio growth an
 - `Assumptions`: Economic parameters (inflation, withdrawal rate, retirement return)
 - `AccumulationResult` / `RetirementResult`: Yearly projections with balances, withdrawals, taxes
 
+### Key Features
+
+**Configurable Withdrawal Ages:**
+- Each account has optional `withdrawalRules: { startAge: number }`
+- Defaults are smart: traditional accounts default to 60 (US) or retirement age (Canada)
+- Validation enforces RMD age constraints (can't delay past age 73 US, 71 Canada)
+- Early withdrawals trigger 10% penalty for US traditional accounts before age 59.5
+
 ### Tailwind v4
 
 Uses `@tailwindcss/vite` plugin. Dark mode requires this CSS directive:

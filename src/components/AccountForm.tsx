@@ -1,12 +1,15 @@
 import { useState } from 'react';
-import { Account, AccountType, getAccountTypeLabel, is401k } from '../types';
+import { Account, AccountType, Profile, getAccountTypeLabel, is401k } from '../types';
 import { NumberInput } from './NumberInput';
 import { Tooltip } from './Tooltip';
 import { v4 as uuidv4 } from 'uuid';
 import { useCountry } from '../contexts/CountryContext';
+import { getDefaultWithdrawalAge, getMaxWithdrawalAge } from '../utils/withdrawalDefaults';
+import { getCountryConfig } from '../countries';
 
 interface AccountFormProps {
   account?: Account;
+  profile: Profile;
   onSave: (account: Account) => void;
   onCancel: () => void;
 }
@@ -23,7 +26,7 @@ const defaultAccount: Omit<Account, 'id'> = {
 const inputClassName = "w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 dark:text-white";
 const inputErrorClassName = "w-full px-3 py-2 border border-red-500 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 dark:text-white";
 
-export function AccountForm({ account, onSave, onCancel }: AccountFormProps) {
+export function AccountForm({ account, profile, onSave, onCancel }: AccountFormProps) {
   const { config: countryConfig } = useCountry();
 
   // Initialize form data from account prop (component is re-mounted with key when account changes)
@@ -39,6 +42,29 @@ export function AccountForm({ account, onSave, onCancel }: AccountFormProps) {
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Get country config for penalty info and defaults
+  const fullCountryConfig = getCountryConfig(profile.country);
+  const penaltyInfo = fullCountryConfig.getPenaltyInfo(formData.type);
+
+  // Calculate min/max withdrawal ages
+  const minWithdrawalAge = profile.currentAge;
+  const maxWithdrawalAge = getMaxWithdrawalAge(
+    { ...formData, id: account?.id || '' },
+    profile.lifeExpectancy,
+    fullCountryConfig
+  );
+
+  // Get current withdrawal age (or default)
+  const currentWithdrawalAge = formData.withdrawalRules?.startAge ??
+    getDefaultWithdrawalAge(
+      { ...formData, id: account?.id || '' },
+      profile.retirementAge,
+      fullCountryConfig
+    );
+
+  // Derive warning state instead of storing in state
+  const showPenaltyWarning = penaltyInfo.appliesToAccountType && currentWithdrawalAge < penaltyInfo.penaltyAge;
 
   const handleChange = (field: keyof Omit<Account, 'id'>, value: string | number) => {
     setFormData(prev => ({
@@ -232,6 +258,46 @@ export function AccountForm({ account, onSave, onCancel }: AccountFormProps) {
           </div>
         </div>
       )}
+
+      {/* Withdrawal Settings */}
+      <div className="border-t border-gray-200 dark:border-gray-600 pt-4 mt-4">
+        <h4 className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-3">
+          Withdrawal Settings
+        </h4>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            Start Withdrawal Age
+            <Tooltip text="Age when you plan to start withdrawing from this account. Cannot be later than RMD age if applicable." />
+          </label>
+          <NumberInput
+            value={currentWithdrawalAge}
+            onChange={(val) => {
+              setFormData(prev => ({
+                ...prev,
+                withdrawalRules: { startAge: val }
+              }));
+            }}
+            min={minWithdrawalAge}
+            max={maxWithdrawalAge}
+            defaultValue={currentWithdrawalAge}
+            className={inputClassName}
+          />
+          {showPenaltyWarning && (
+            <p className="mt-1 text-sm text-yellow-600 dark:text-yellow-500">
+              Warning: Withdrawing before age {Math.ceil(penaltyInfo.penaltyAge)} incurs a {(penaltyInfo.penaltyRate * 100).toFixed(0)}% penalty
+            </p>
+          )}
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            Default: {getDefaultWithdrawalAge(
+              { ...formData, id: account?.id || '' },
+              profile.retirementAge,
+              fullCountryConfig
+            )}
+            {maxWithdrawalAge < profile.lifeExpectancy && ` (Max: ${maxWithdrawalAge} due to RMD)`}
+          </p>
+        </div>
+      </div>
 
       <div className="flex justify-end gap-3 pt-4">
         <button

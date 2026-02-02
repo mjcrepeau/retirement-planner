@@ -166,6 +166,16 @@ export function SummaryCards({
     ? yearlyWithdrawals.reduce((sum, y) => sum + (y.grossIncome > 0 ? y.totalTax / y.grossIncome : 0), 0) / yearlyWithdrawals.length
     : 0;
 
+  // Calculate lifetime penalties
+  const lifetimePenalties = yearlyWithdrawals.reduce(
+    (sum, year) => sum + year.totalPenalties,
+    0
+  );
+
+  const avgAnnualPenalty = yearlyWithdrawals.length > 0
+    ? lifetimePenalties / yearlyWithdrawals.length
+    : 0;
+
   return (
     <div className="space-y-6">
       {/* Invalid Age Configuration Warning */}
@@ -330,6 +340,33 @@ export function SummaryCards({
               </div>
             }
           />
+          {lifetimePenalties > 0 && (
+            <ExpandableStatCard
+              title="⚠️ Early Withdrawal Penalties"
+              value={formatCurrency(lifetimePenalties)}
+              subtitle={`Avg: ${formatCurrency(avgAnnualPenalty)}/year`}
+              color="red"
+              formula="Sum of all early withdrawal penalties across retirement years"
+              details={
+                <div>
+                  <p className="mb-2">
+                    Total penalties from withdrawals before age 59.5 (traditional accounts).
+                  </p>
+                  <p className="mb-1">
+                    Over {retirementYears} years of retirement:
+                  </p>
+                  <ul className="space-y-0.5 mb-2">
+                    <li>Total penalties: {formatCurrency(lifetimePenalties)}</li>
+                    <li>Average per year: {formatCurrency(avgAnnualPenalty)}</li>
+                    <li>Years with penalties: {yearlyWithdrawals.filter(y => y.totalPenalties > 0).length}</li>
+                  </ul>
+                  <p className="text-red-600 dark:text-red-400 italic">
+                    Consider delaying retirement or using penalty-free withdrawal sources to minimize these costs.
+                  </p>
+                </div>
+              }
+            />
+          )}
         </div>
       </div>
 

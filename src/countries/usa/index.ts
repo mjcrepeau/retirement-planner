@@ -1,4 +1,4 @@
-import type { CountryConfig, AccountTypeConfig, Region, ConversionRule, ContributionLimits, AccountGroup } from '../index';
+import type { CountryConfig, AccountTypeConfig, Region, ConversionRule, ContributionLimits, AccountGroup, PenaltyInfo } from '../index';
 import type { Profile } from '../../types';
 import { calculateTotalFederalTax, calculateCapitalGainsTax as calcCapGainsTax } from './taxes';
 import { calculateSocialSecurityBenefits } from './benefits';
@@ -166,5 +166,26 @@ export const USConfig: CountryConfig = {
 
   getAccountGroupings: (): AccountGroup[] => {
     return USA_ACCOUNT_GROUPS;
+  },
+
+  getPenaltyInfo: (accountType: string): PenaltyInfo => {
+    const isTraditional = accountType === 'traditional_401k' || accountType === 'traditional_ira';
+    return {
+      penaltyAge: 59.5,
+      penaltyRate: 0.10,
+      appliesToAccountType: isTraditional,
+    };
+  },
+
+  calculateEarlyWithdrawalPenalty: (
+    amount: number,
+    accountType: string,
+    age: number
+  ): number => {
+    const penaltyInfo = USConfig.getPenaltyInfo(accountType);
+    if (age >= penaltyInfo.penaltyAge || !penaltyInfo.appliesToAccountType) {
+      return 0;
+    }
+    return amount * penaltyInfo.penaltyRate;
   },
 };

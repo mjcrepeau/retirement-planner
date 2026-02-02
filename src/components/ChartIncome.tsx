@@ -69,7 +69,12 @@ function CustomTooltip({ active, payload, label, result }: CustomTooltipProps) {
         </div>
         <div className="flex justify-between gap-4">
           <span style={{ color: CHART_COLORS.tax }}>Taxes:</span>
-          <span className="font-medium text-red-600 dark:text-red-400">-{formatTooltipValue(yearData.totalTax)}</span>
+          <span className="font-medium text-red-600 dark:text-red-400">
+            -{formatTooltipValue(yearData.totalTax)}
+            {yearData.totalPenalties > 0 && (
+              <span className="text-xs"> (includes {formatTooltipValue(yearData.totalPenalties)} penalties)</span>
+            )}
+          </span>
         </div>
         <div className="border-t border-gray-200 dark:border-gray-600 mt-2 pt-2 flex justify-between gap-4 font-semibold">
           <span style={{ color: CHART_COLORS.spending }}>After-Tax Income:</span>

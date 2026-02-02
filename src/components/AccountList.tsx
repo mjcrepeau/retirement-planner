@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Account, getAccountTypeLabel, getTaxTreatment } from '../types';
+import { Account, Profile, getAccountTypeLabel, getTaxTreatment } from '../types';
 import { AccountForm } from './AccountForm';
 import { CHART_COLORS } from '../utils/constants';
 
 interface AccountListProps {
   accounts: Account[];
+  profile: Profile;
   onAdd: (account: Account) => void;
   onUpdate: (account: Account) => void;
   onDelete: (id: string) => void;
@@ -23,7 +24,7 @@ function getTaxTreatmentColor(type: Account['type']): string {
   return CHART_COLORS[treatment];
 }
 
-export function AccountList({ accounts, onAdd, onUpdate, onDelete }: AccountListProps) {
+export function AccountList({ accounts, profile, onAdd, onUpdate, onDelete }: AccountListProps) {
   const [showForm, setShowForm] = useState(false);
   const [editingAccount, setEditingAccount] = useState<Account | undefined>();
 
@@ -73,6 +74,7 @@ export function AccountList({ accounts, onAdd, onUpdate, onDelete }: AccountList
           <AccountForm
             key={editingAccount?.id ?? 'new'}
             account={editingAccount}
+            profile={profile}
             onSave={handleSave}
             onCancel={handleCancel}
           />

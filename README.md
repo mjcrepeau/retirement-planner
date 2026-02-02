@@ -32,6 +32,7 @@ Switching countries automatically resets accounts and profile to country-appropr
 - **Employer Matching**: Configure employer match percentage and limits for 401(k)/RRSP accounts
 - **Individual Returns**: Set expected return rates per account
 - **Contribution Growth**: Model salary increases affecting future contributions
+- **Configurable Withdrawal Ages**: Set when withdrawals begin from each account to model early retirement scenarios
 
 ### Retirement Projections
 - **Accumulation Phase**: Project portfolio growth from now until retirement with compound interest and contributions
@@ -42,10 +43,12 @@ Switching countries automatically resets accounts and profile to country-appropr
 ### Tax-Optimized Withdrawals
 The withdrawal algorithm follows a tax-efficient strategy:
 1. **Required Minimum Distributions (RMDs)**: Mandatory withdrawals from traditional accounts starting at age 73
-2. **Tax Bracket Optimization**: Fill lower tax brackets with traditional withdrawals
-3. **Roth Withdrawals**: Tax-free withdrawals for remaining needs
-4. **Taxable Account Withdrawals**: With capital gains tracking
-5. **HSA**: Used last, tax-free for qualified medical expenses
+2. **Account Availability**: Respects configured withdrawal start ages (e.g., delaying IRA withdrawals until age 60)
+3. **Early Withdrawal Penalties**: Calculates 10% penalty for US traditional account withdrawals before age 59.5
+4. **Tax Bracket Optimization**: Fill lower tax brackets with traditional withdrawals
+5. **Roth Withdrawals**: Tax-free withdrawals for remaining needs
+6. **Taxable Account Withdrawals**: With capital gains tracking
+7. **HSA**: Used last, tax-free for qualified medical expenses
 
 ### Tax Calculations
 

@@ -32,6 +32,12 @@ export interface BenefitCalculation {
   annualAmount: number;
 }
 
+export interface PenaltyInfo {
+  penaltyAge: number;              // Age when penalty no longer applies (e.g., 59.5 for US)
+  penaltyRate: number;             // Penalty rate as decimal (e.g., 0.10 for 10%)
+  appliesToAccountType: boolean;   // Does this account type have early withdrawal penalties?
+}
+
 /**
  * AccountGroup defines how accounts are grouped for display purposes
  * This allows each country to define meaningful groupings for their account types
@@ -164,6 +170,26 @@ export interface CountryConfig {
    * Returns groups that define how accounts should be organized in charts and summaries
    */
   getAccountGroupings: () => AccountGroup[];
+
+  /**
+   * Get penalty information for an account type
+   * @param accountType - The account type to check
+   * @returns Penalty info including age, rate, and whether it applies
+   */
+  getPenaltyInfo: (accountType: string) => PenaltyInfo;
+
+  /**
+   * Calculate early withdrawal penalty amount
+   * @param amount - Withdrawal amount
+   * @param accountType - Type of account
+   * @param age - Current age
+   * @returns Penalty amount in dollars
+   */
+  calculateEarlyWithdrawalPenalty: (
+    amount: number,
+    accountType: string,
+    age: number
+  ) => number;
 }
 
 /**

@@ -24,6 +24,19 @@ type ViewMode = 'income' | 'withdrawals' | 'balances' | 'taxes';
 export function DataTableWithdrawal({ accounts, result }: DataTableWithdrawalProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('income');
+  const [expandedPenaltyRows, setExpandedPenaltyRows] = useState<Set<number>>(new Set());
+
+  const togglePenaltyRow = (age: number) => {
+    setExpandedPenaltyRows(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(age)) {
+        newSet.delete(age);
+      } else {
+        newSet.add(age);
+      }
+      return newSet;
+    });
+  };
 
   if (!result.yearlyWithdrawals.length) return null;
 
@@ -238,6 +251,7 @@ export function DataTableWithdrawal({ accounts, result }: DataTableWithdrawalPro
                     <th className="text-right py-2 px-2 font-medium text-gray-700 dark:text-gray-300">Gross Income</th>
                     <th className="text-right py-2 px-2 font-medium text-red-600 dark:text-red-400">Federal Tax</th>
                     <th className="text-right py-2 px-2 font-medium text-orange-600 dark:text-orange-400">State Tax</th>
+                    <th className="text-right py-2 px-2 font-medium text-red-600 dark:text-red-400">Penalties</th>
                     <th className="text-right py-2 px-2 font-medium text-red-600 dark:text-red-400">Total Tax</th>
                     <th className="text-right py-2 px-2 font-medium text-gray-700 dark:text-gray-300">Effective Rate</th>
                   </tr>
@@ -245,15 +259,53 @@ export function DataTableWithdrawal({ accounts, result }: DataTableWithdrawalPro
                 <tbody>
                   {result.yearlyWithdrawals.map((yearData) => {
                     const effectiveRate = yearData.grossIncome > 0 ? yearData.totalTax / yearData.grossIncome : 0;
+                    const hasPenalties = yearData.totalPenalties > 0;
+                    const isPenaltyExpanded = expandedPenaltyRows.has(yearData.age);
                     return (
-                      <tr key={yearData.age} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                        <td className="py-2 px-2 font-medium text-gray-900 dark:text-white sticky left-0 bg-white dark:bg-gray-800">{yearData.age}</td>
-                        <td className="py-2 px-2 text-right font-mono text-gray-900 dark:text-white">{formatCurrency(yearData.grossIncome)}</td>
-                        <td className="py-2 px-2 text-right font-mono text-red-600 dark:text-red-400">{formatCurrency(yearData.federalTax)}</td>
-                        <td className="py-2 px-2 text-right font-mono text-orange-600 dark:text-orange-400">{formatCurrency(yearData.stateTax)}</td>
-                        <td className="py-2 px-2 text-right font-mono text-red-600 dark:text-red-400">{formatCurrency(yearData.totalTax)}</td>
-                        <td className="py-2 px-2 text-right font-mono text-gray-600 dark:text-gray-400">{formatPercent(effectiveRate)}</td>
-                      </tr>
+                      <>
+                        <tr key={yearData.age} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                          <td className="py-2 px-2 font-medium text-gray-900 dark:text-white sticky left-0 bg-white dark:bg-gray-800">{yearData.age}</td>
+                          <td className="py-2 px-2 text-right font-mono text-gray-900 dark:text-white">{formatCurrency(yearData.grossIncome)}</td>
+                          <td className="py-2 px-2 text-right font-mono text-red-600 dark:text-red-400">{formatCurrency(yearData.federalTax)}</td>
+                          <td className="py-2 px-2 text-right font-mono text-orange-600 dark:text-orange-400">{formatCurrency(yearData.stateTax)}</td>
+                          <td className="py-2 px-2 text-right font-mono text-red-600 dark:text-red-500 font-medium">
+                            {hasPenalties ? (
+                              <button
+                                onClick={() => togglePenaltyRow(yearData.age)}
+                                className="hover:underline cursor-pointer"
+                              >
+                                {formatCurrency(yearData.totalPenalties)}
+                                {yearData.earlyWithdrawalPenalties.length > 0 && (
+                                  <span className="ml-1 text-xs">
+                                    {isPenaltyExpanded ? '▼' : '▶'}
+                                  </span>
+                                )}
+                              </button>
+                            ) : (
+                              '-'
+                            )}
+                          </td>
+                          <td className="py-2 px-2 text-right font-mono text-red-600 dark:text-red-400">{formatCurrency(yearData.totalTax)}</td>
+                          <td className="py-2 px-2 text-right font-mono text-gray-600 dark:text-gray-400">{formatPercent(effectiveRate)}</td>
+                        </tr>
+                        {hasPenalties && isPenaltyExpanded && yearData.earlyWithdrawalPenalties.length > 0 && (
+                          <tr key={`${yearData.age}-penalties`} className="border-b border-gray-100 dark:border-gray-800 bg-red-50 dark:bg-red-900/10">
+                            <td colSpan={7} className="py-2 px-2">
+                              <div className="pl-4 border-l-2 border-red-300 dark:border-red-700">
+                                <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Early Withdrawal Penalty Details:</p>
+                                {yearData.earlyWithdrawalPenalties.map((penalty, idx) => (
+                                  <div key={idx} className="flex justify-between text-xs text-gray-600 dark:text-gray-400 mb-1">
+                                    <span>{penalty.accountName}</span>
+                                    <span className="text-red-600 dark:text-red-500 font-medium">
+                                      {formatCurrency(penalty.amount)}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </>
                     );
                   })}
                 </tbody>
@@ -268,6 +320,9 @@ export function DataTableWithdrawal({ accounts, result }: DataTableWithdrawalPro
                     </td>
                     <td className="py-2 px-2 text-right font-mono font-medium text-orange-600 dark:text-orange-400">
                       {formatCurrency(result.yearlyWithdrawals.reduce((sum, y) => sum + y.stateTax, 0))}
+                    </td>
+                    <td className="py-2 px-2 text-right font-mono font-medium text-red-600 dark:text-red-500">
+                      {formatCurrency(result.yearlyWithdrawals.reduce((sum, y) => sum + y.totalPenalties, 0))}
                     </td>
                     <td className="py-2 px-2 text-right font-mono font-medium text-red-600 dark:text-red-400">
                       {formatCurrency(result.lifetimeTaxesPaid)}

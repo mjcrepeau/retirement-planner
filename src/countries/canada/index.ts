@@ -1,4 +1,4 @@
-import type { CountryConfig, AccountTypeConfig, Region, ConversionRule, ContributionLimits, AccountGroup } from '../index';
+import type { CountryConfig, AccountTypeConfig, Region, ConversionRule, ContributionLimits, AccountGroup, PenaltyInfo } from '../index';
 import type { Profile } from '../../types';
 import { calculateFederalIncomeTax, calculateProvincialIncomeTax, calculateTotalTax } from './taxes';
 import { calculateCanadianRetirementBenefits } from './benefits';
@@ -203,5 +203,25 @@ export const CAConfig: CountryConfig = {
 
   getAccountGroupings: (): AccountGroup[] => {
     return CANADA_ACCOUNT_GROUPS;
+  },
+
+  getPenaltyInfo: (_accountType: string): PenaltyInfo => {
+    // Canada does not have early withdrawal penalties like the US
+    // Withholding tax is handled separately in tax calculations
+    return {
+      penaltyAge: 0,
+      penaltyRate: 0,
+      appliesToAccountType: false,
+    };
+  },
+
+  calculateEarlyWithdrawalPenalty: (
+    _amount: number,
+    _accountType: string,
+    _age: number
+  ): number => {
+    // Canada does not have early withdrawal penalties
+    // Withholding tax is handled separately in tax calculations
+    return 0;
   },
 };

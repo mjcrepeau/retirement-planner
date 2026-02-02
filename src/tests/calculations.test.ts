@@ -17,6 +17,7 @@ import {
 import { getRMDDivisor } from '../utils/constants';
 import { Account, Profile, Assumptions } from '../types';
 import { getCountryConfig } from '../countries';
+import { getDefaultWithdrawalAge, getMaxWithdrawalAge } from '../utils/withdrawalDefaults';
 
 // Get US config for tests
 const usConfig = getCountryConfig('US');
@@ -1301,6 +1302,321 @@ function testCanadianCalculations(): void {
 }
 
 // =============================================================================
+// EARLY WITHDRAWAL PENALTY TESTS
+// =============================================================================
+
+function testEarlyWithdrawalPenalties(): void {
+  section('EARLY WITHDRAWAL PENALTY TESTS');
+
+  console.log('\n--- US Traditional IRA Early Withdrawal ---');
+
+  // Test early withdrawal at age 55 (before 59.5)
+  const penaltyInfo1 = usConfig.getPenaltyInfo('traditional_ira');
+  assert(penaltyInfo1.appliesToAccountType, 'Traditional IRA has penalty');
+  assertApprox(penaltyInfo1.penaltyAge, 59.5, 0.01, 'Penalty age is 59.5');
+  assertApprox(penaltyInfo1.penaltyRate, 0.10, 0.01, 'Penalty rate is 10%');
+
+  const penalty1 = usConfig.calculateEarlyWithdrawalPenalty(10000, 'traditional_ira', 55);
+  assertApprox(penalty1, 1000, 0.01, '$10k withdrawal at 55 = $1,000 penalty');
+
+  // Test no penalty after 59.5
+  const penalty2 = usConfig.calculateEarlyWithdrawalPenalty(10000, 'traditional_ira', 60);
+  assertApprox(penalty2, 0, 0.01, '$10k withdrawal at 60 = $0 penalty');
+
+  console.log('\n--- US Traditional 401(k) Early Withdrawal ---');
+
+  // Test traditional 401(k) also has penalty
+  const penaltyInfo401k = usConfig.getPenaltyInfo('traditional_401k');
+  assert(penaltyInfo401k.appliesToAccountType, 'Traditional 401(k) has penalty');
+  assertApprox(penaltyInfo401k.penaltyAge, 59.5, 0.01, 'Penalty age is 59.5 for 401(k)');
+
+  const penalty401k = usConfig.calculateEarlyWithdrawalPenalty(50000, 'traditional_401k', 58);
+  assertApprox(penalty401k, 5000, 0.01, '$50k withdrawal at 58 = $5,000 penalty');
+
+  console.log('\n--- US Roth IRA (No Penalty) ---');
+
+  const penaltyInfo2 = usConfig.getPenaltyInfo('roth_ira');
+  assert(!penaltyInfo2.appliesToAccountType, 'Roth IRA has no penalty');
+
+  const penalty3 = usConfig.calculateEarlyWithdrawalPenalty(10000, 'roth_ira', 55);
+  assertApprox(penalty3, 0, 0.01, 'Roth IRA withdrawal at 55 = $0 penalty');
+
+  console.log('\n--- US Taxable Account (No Penalty) ---');
+
+  const penaltyInfo3 = usConfig.getPenaltyInfo('taxable');
+  assert(!penaltyInfo3.appliesToAccountType, 'Taxable account has no penalty');
+
+  const penaltyTaxable = usConfig.calculateEarlyWithdrawalPenalty(10000, 'taxable', 40);
+  assertApprox(penaltyTaxable, 0, 0.01, 'Taxable account withdrawal = $0 penalty');
+
+  console.log('\n--- US HSA Account (No Penalty) ---');
+
+  const penaltyInfoHSA = usConfig.getPenaltyInfo('hsa');
+  assert(!penaltyInfoHSA.appliesToAccountType, 'HSA account has no penalty');
+
+  const penaltyHSA = usConfig.calculateEarlyWithdrawalPenalty(10000, 'hsa', 40);
+  assertApprox(penaltyHSA, 0, 0.01, 'HSA account withdrawal = $0 penalty');
+
+  console.log('\n--- Canada RRSP (No Penalty System) ---');
+
+  const caConfig = getCountryConfig('CA');
+  const penaltyInfo4 = caConfig.getPenaltyInfo('rrsp');
+  assert(!penaltyInfo4.appliesToAccountType, 'Canadian RRSP has no US-style penalty');
+
+  const penalty4 = caConfig.calculateEarlyWithdrawalPenalty(10000, 'rrsp', 55);
+  assertApprox(penalty4, 0, 0.01, 'Canadian RRSP withdrawal = $0 penalty');
+
+  console.log('\n--- Canada RRIF (No Penalty System) ---');
+
+  const penaltyInfoRRIF = caConfig.getPenaltyInfo('rrif');
+  assert(!penaltyInfoRRIF.appliesToAccountType, 'Canadian RRIF has no US-style penalty');
+
+  const penaltyRRIF = caConfig.calculateEarlyWithdrawalPenalty(10000, 'rrif', 65);
+  assertApprox(penaltyRRIF, 0, 0.01, 'Canadian RRIF withdrawal = $0 penalty');
+
+  console.log('\n--- Edge Case: Exact Penalty Age ---');
+
+  // Test exactly at 59.5 years old
+  const penaltyExact = usConfig.calculateEarlyWithdrawalPenalty(10000, 'traditional_ira', 59.5);
+  assertApprox(penaltyExact, 0, 0.01, 'Withdrawal at exactly 59.5 = $0 penalty');
+
+  // Test just before 59.5
+  const penaltyJustBefore = usConfig.calculateEarlyWithdrawalPenalty(10000, 'traditional_ira', 59.4);
+  assertApprox(penaltyJustBefore, 1000, 0.01, 'Withdrawal at 59.4 = $1,000 penalty');
+}
+
+// =============================================================================
+// WITHDRAWAL WITH CONFIGURABLE START AGE TESTS
+// =============================================================================
+
+function testWithdrawalWithConfigurableAge(): void {
+  section('WITHDRAWAL WITH CONFIGURABLE START AGE TESTS');
+
+  console.log('\n--- Early Retirement with Delayed IRA Access ---');
+
+  // Scenario: Retire at 52, traditional IRA not available until 60
+  const earlyRetireAccounts: Account[] = [
+    {
+      id: '1',
+      name: 'Taxable Brokerage',
+      type: 'taxable',
+      balance: 600000,
+      annualContribution: 0,
+      contributionGrowthRate: 0,
+      returnRate: 0.05,
+      withdrawalRules: { startAge: 52 },  // Available immediately
+    },
+    {
+      id: '2',
+      name: 'Traditional IRA',
+      type: 'traditional_ira',
+      balance: 600000,
+      annualContribution: 0,
+      contributionGrowthRate: 0,
+      returnRate: 0.05,
+      withdrawalRules: { startAge: 60 },  // Not available until 60
+    },
+  ];
+
+  const earlyRetireProfile: Profile = {
+    country: 'US',
+    currentAge: 52,
+    retirementAge: 52,
+    lifeExpectancy: 90,
+    region: 'CA',
+    filingStatus: 'married_filing_jointly',
+    stateTaxRate: 0.05,
+    socialSecurityBenefit: 30000,
+    socialSecurityStartAge: 67,
+  };
+
+  const earlyRetireAssumptions: Assumptions = {
+    inflationRate: 0.03,
+    safeWithdrawalRate: 0.04,
+    retirementReturnRate: 0.05,
+  };
+
+  // No accumulation phase (already retired)
+  const emptyAccumulation: AccumulationResult = {
+    yearlyBalances: [],
+    finalBalances: {
+      '1': 600000,
+      '2': 600000,
+    },
+    totalAtRetirement: 1200000,
+    breakdownByGroup: {
+      'Taxable': 600000,
+      'Traditional': 600000,
+    },
+  };
+
+  const result = calculateWithdrawals(
+    earlyRetireAccounts,
+    earlyRetireProfile,
+    earlyRetireAssumptions,
+    emptyAccumulation,
+    usConfig
+  );
+
+  // At age 52-59, should only withdraw from taxable
+  const age55Year = result.yearlyWithdrawals.find(y => y.age === 55);
+  assert(age55Year !== undefined, 'Has withdrawal data for age 55');
+  if (age55Year) {
+    assert(age55Year.withdrawals['1'] > 0, 'Withdraws from taxable at age 55');
+    assertApprox(age55Year.withdrawals['2'] || 0, 0, 0.01, 'Does not withdraw from IRA at age 55');
+    assertApprox(age55Year.totalPenalties, 0, 0.01, 'No penalties when using taxable only');
+  }
+
+  // At age 60, IRA becomes available
+  const age60Year = result.yearlyWithdrawals.find(y => y.age === 60);
+  assert(age60Year !== undefined, 'Has withdrawal data for age 60');
+  if (age60Year) {
+    // Should be able to withdraw from both now
+    assert(age60Year.withdrawals['2'] >= 0, 'IRA is now available at age 60');
+    assertApprox(age60Year.totalPenalties, 0, 0.01, 'No penalties at age 60 (penalty-free age)');
+  }
+
+  console.log('\n--- Early Withdrawal with Penalty ---');
+
+  // Scenario: Retire at 52, need to tap IRA early (before 60)
+  const penaltyAccounts: Account[] = [
+    {
+      id: '1',
+      name: 'Taxable Brokerage',
+      type: 'taxable',
+      balance: 200000,  // Not enough to cover needs
+      annualContribution: 0,
+      contributionGrowthRate: 0,
+      returnRate: 0.05,
+      withdrawalRules: { startAge: 52 },
+    },
+    {
+      id: '2',
+      name: 'Traditional IRA',
+      type: 'traditional_ira',
+      balance: 1000000,
+      annualContribution: 0,
+      contributionGrowthRate: 0,
+      returnRate: 0.05,
+      withdrawalRules: { startAge: 60 },  // Set to 60, but will be forced earlier
+    },
+  ];
+
+  const penaltyProfile: Profile = {
+    country: 'US',
+    currentAge: 52,
+    retirementAge: 52,
+    lifeExpectancy: 90,
+    region: 'CA',
+    filingStatus: 'married_filing_jointly',
+    stateTaxRate: 0.05,
+    socialSecurityBenefit: 0,
+    socialSecurityStartAge: 67,
+  };
+
+  const penaltyAccumulation: AccumulationResult = {
+    yearlyBalances: [],
+    finalBalances: {
+      '1': 200000,
+      '2': 1000000,
+    },
+    totalAtRetirement: 1200000,
+    breakdownByGroup: {
+      'Taxable': 200000,
+      'Traditional': 1000000,
+    },
+  };
+
+  const penaltyResult = calculateWithdrawals(
+    penaltyAccounts,
+    penaltyProfile,
+    earlyRetireAssumptions,
+    penaltyAccumulation,
+    usConfig
+  );
+
+  // First year: $48k target spending, only $200k taxable available
+  // Will need to dip into IRA early, triggering 10% penalty
+  const age52Year = penaltyResult.yearlyWithdrawals[0];
+  assert(age52Year.age === 52, 'First year is age 52');
+
+  // Should deplete taxable in first few years and start using IRA
+  const hasEarlyPenalty = penaltyResult.yearlyWithdrawals
+    .filter(y => y.age < 60)
+    .some(y => y.totalPenalties > 0);
+  assert(hasEarlyPenalty, 'Has early withdrawal penalties before age 60');
+
+  // After 60, penalties should stop
+  const age61Year = penaltyResult.yearlyWithdrawals.find(y => y.age === 61);
+  if (age61Year) {
+    assertApprox(age61Year.totalPenalties, 0, 0.01, 'No penalties after age 60');
+  }
+}
+
+// =============================================================================
+// WITHDRAWAL DEFAULTS TESTS
+// =============================================================================
+
+function testWithdrawalDefaults(): void {
+  section('WITHDRAWAL DEFAULTS TESTS');
+
+  console.log('\n--- US Traditional Account Defaults ---');
+
+  const usTraditionalAccount: Account = {
+    id: '1',
+    name: 'Traditional IRA',
+    type: 'traditional_ira',
+    balance: 100000,
+    annualContribution: 0,
+    contributionGrowthRate: 0,
+    returnRate: 0.07,
+  };
+
+  const defaultAge1 = getDefaultWithdrawalAge(usTraditionalAccount, 65, usConfig);
+  assertApprox(defaultAge1, 60, 0.01, 'US traditional IRA defaults to age 60');
+
+  const maxAge1 = getMaxWithdrawalAge(usTraditionalAccount, 90, usConfig);
+  assertApprox(maxAge1, 73, 0.01, 'US traditional IRA max age is 73 (RMD age)');
+
+  console.log('\n--- US Roth Account Defaults ---');
+
+  const usRothAccount: Account = {
+    id: '2',
+    name: 'Roth IRA',
+    type: 'roth_ira',
+    balance: 100000,
+    annualContribution: 0,
+    contributionGrowthRate: 0,
+    returnRate: 0.07,
+  };
+
+  const defaultAge2 = getDefaultWithdrawalAge(usRothAccount, 65, usConfig);
+  assertApprox(defaultAge2, 65, 0.01, 'US Roth IRA defaults to retirement age');
+
+  const maxAge2 = getMaxWithdrawalAge(usRothAccount, 90, usConfig);
+  assertApprox(maxAge2, 90, 0.01, 'US Roth IRA max age is life expectancy');
+
+  console.log('\n--- Canada RRSP Defaults ---');
+
+  const caConfig = getCountryConfig('CA');
+  const caRRSPAccount: Account = {
+    id: '3',
+    name: 'RRSP',
+    type: 'rrsp',
+    balance: 100000,
+    annualContribution: 0,
+    contributionGrowthRate: 0,
+    returnRate: 0.07,
+  };
+
+  const defaultAge3 = getDefaultWithdrawalAge(caRRSPAccount, 65, caConfig);
+  assertApprox(defaultAge3, 65, 0.01, 'Canadian RRSP defaults to retirement age');
+
+  const maxAge3 = getMaxWithdrawalAge(caRRSPAccount, 90, caConfig);
+  assertApprox(maxAge3, 71, 0.01, 'Canadian RRSP max age is 71 (RRIF conversion age)');
+}
+
+// =============================================================================
 // RUN ALL TESTS
 // =============================================================================
 
@@ -1322,6 +1638,9 @@ function runAllTests(): void {
   testPortfolioDepletion();
   testTotalFederalTaxIntegration();
   testCanadianCalculations();
+  testWithdrawalWithConfigurableAge();
+  testWithdrawalDefaults();
+  testEarlyWithdrawalPenalties();
 
   console.log('\n' + '='.repeat(60));
   console.log('TEST SUMMARY');
