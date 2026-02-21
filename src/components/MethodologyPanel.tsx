@@ -573,7 +573,7 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
       {/* Government Benefits */}
       <section className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-          {isCanada ? 'Government Benefits (CPP & OAS)' : 'Social Security Benefits'}
+          {isCanada ? 'Government Benefits (CPP & OAS)' : 'Retirement Income Streams'}
         </h3>
         <div className="space-y-4 text-sm">
           {isCanada ? (
@@ -601,13 +601,14 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
             </>
           ) : (
             <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
-              <h4 className="font-medium text-gray-800 dark:text-gray-200 mb-2">Social Security</h4>
+              <h4 className="font-medium text-gray-800 dark:text-gray-200 mb-2">Income Streams</h4>
               <ul className="space-y-1 text-gray-600 dark:text-gray-400">
-                <li>• Your benefit: {formatCurrency(profile.socialSecurityBenefit || 0)}/year (in today's dollars)</li>
-                <li>• Start age: {profile.socialSecurityStartAge || 67}</li>
+                <li>• Configure Social Security, pensions, and other retirement income in the Income Streams panel</li>
+                <li>• Each stream has a name, monthly benefit, start age, and tax treatment</li>
                 <li>• Benefits are inflation-adjusted annually</li>
-                <li>• Up to 85% of benefits are taxable depending on income</li>
-                <li>• Calculator assumes 85% taxable (maximum rate)</li>
+                <li>• Social Security streams: 85% taxable (maximum rate)</li>
+                <li>• Pension streams: 100% taxable as ordinary income</li>
+                <li>• Tax-free streams (e.g., VA disability): excluded from taxable income</li>
               </ul>
             </div>
           )}
