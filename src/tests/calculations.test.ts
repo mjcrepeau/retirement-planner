@@ -7,6 +7,7 @@
 
 import { calculateAccumulation } from '../utils/projections';
 import { calculateWithdrawals } from '../utils/withdrawals';
+import { calculateIncomeStreamBenefits } from '../utils/incomeStreams';
 import {
   calculateFederalIncomeTax,
   calculateTotalFederalTax,
@@ -15,7 +16,7 @@ import {
   getStandardDeduction,
 } from '../utils/taxes';
 import { getRMDDivisor } from '../utils/constants';
-import { Account, Profile, Assumptions } from '../types';
+import { Account, Profile, Assumptions, IncomeStream } from '../types';
 import { getCountryConfig } from '../countries';
 import { getDefaultWithdrawalAge, getMaxWithdrawalAge } from '../utils/withdrawalDefaults';
 
@@ -398,8 +399,8 @@ function testWithdrawalPhase(): void {
   assert(age67 !== undefined, 'Has data for age 67');
 
   if (age65 && age67) {
-    assertApprox(age65.socialSecurityIncome, 0, 0.01, 'No SS income at age 65');
-    assertApprox(age67.socialSecurityIncome, 30000, 0.01, 'SS income at age 67 = $30,000');
+    assertApprox(age65.governmentBenefitIncome, 0, 0.01, 'No SS income at age 65');
+    assertApprox(age67.governmentBenefitIncome, 30000, 0.01, 'SS income at age 67 = $30,000');
 
     // Total withdrawal should decrease when SS starts
     assert(
@@ -507,7 +508,7 @@ function testIncomeContinuity(): void {
       const row = [
         year.age.toString().padStart(3),
         `$${(year.targetSpending / 1000).toFixed(1)}k`.padStart(8),
-        `$${(year.socialSecurityIncome / 1000).toFixed(1)}k`.padStart(8),
+        `$${(year.governmentBenefitIncome / 1000).toFixed(1)}k`.padStart(8),
         `$${(year.totalWithdrawal / 1000).toFixed(1)}k`.padStart(10),
         `$${(year.grossIncome / 1000).toFixed(1)}k`.padStart(8),
         `$${(year.totalTax / 1000).toFixed(1)}k`.padStart(8),
@@ -1098,7 +1099,7 @@ function testInflationConsistency(): void {
 
   if (age67) {
     const expectedSS = 30000 * Math.pow(1.03, 7);
-    assertApprox(age67.socialSecurityIncome, expectedSS, 1, 'SS inflated from current age to start age');
+    assertApprox(age67.governmentBenefitIncome, expectedSS, 1, 'SS inflated from current age to start age');
   }
 }
 
@@ -1617,6 +1618,183 @@ function testWithdrawalDefaults(): void {
 }
 
 // =============================================================================
+// INCOME STREAM CALCULATOR TESTS
+// =============================================================================
+
+function testIncomeStreamCalculator(): void {
+  section('INCOME STREAM CALCULATOR');
+
+  console.log('\n--- No streams ---');
+  const emptyResult = calculateIncomeStreamBenefits([], 67);
+  assertApprox(emptyResult.totalIncome, 0, 0.01, 'No streams = $0 income');
+
+  console.log('\n--- Single SS stream at start age ---');
+  const ssStream: IncomeStream = {
+    id: 'ss1',
+    name: 'Social Security',
+    monthlyAmount: 2500,
+    startAge: 67,
+    taxTreatment: 'social_security',
+  };
+  const ssResult = calculateIncomeStreamBenefits([ssStream], 67);
+  assertApprox(ssResult.totalIncome, 30000, 0.01, '$2500/mo = $30,000/yr at start age');
+  assertApprox(ssResult.byTaxTreatment.social_security, 30000, 0.01, 'All in social_security bucket');
+  assertApprox(ssResult.byTaxTreatment.fully_taxable, 0, 0.01, 'Nothing in fully_taxable');
+  assertApprox(ssResult.byTaxTreatment.tax_free, 0, 0.01, 'Nothing in tax_free');
+
+  console.log('\n--- Before start age ---');
+  const beforeResult = calculateIncomeStreamBenefits([ssStream], 65);
+  assertApprox(beforeResult.totalIncome, 0, 0.01, 'No income before start age');
+
+  console.log('\n--- Multiple streams with different start ages ---');
+  const streams: IncomeStream[] = [
+    { id: 'ss1', name: "Josh's SS", monthlyAmount: 2500, startAge: 67, taxTreatment: 'social_security' },
+    { id: 'ss2', name: "Spouse's SS", monthlyAmount: 2000, startAge: 70, taxTreatment: 'social_security' },
+    { id: 'pension1', name: "Spouse's NC Pension", monthlyAmount: 3000, startAge: 65, taxTreatment: 'fully_taxable' },
+  ];
+
+  const at65 = calculateIncomeStreamBenefits(streams, 65);
+  assertApprox(at65.totalIncome, 36000, 0.01, 'Age 65: only pension ($3000/mo)');
+  assertApprox(at65.byTaxTreatment.fully_taxable, 36000, 0.01, 'Pension in fully_taxable');
+  assertApprox(at65.byTaxTreatment.social_security, 0, 0.01, 'No SS yet');
+
+  const at67 = calculateIncomeStreamBenefits(streams, 67);
+  assertApprox(at67.totalIncome, 66000, 0.01, 'Age 67: pension + one SS');
+  assertApprox(at67.byTaxTreatment.social_security, 30000, 0.01, "Josh's SS active");
+
+  const at70 = calculateIncomeStreamBenefits(streams, 70);
+  assertApprox(at70.totalIncome, 90000, 0.01, 'Age 70: all streams active');
+  assertApprox(at70.byTaxTreatment.social_security, 54000, 0.01, 'Both SS streams');
+
+  console.log('\n--- Tax-free stream ---');
+  const vaDisability: IncomeStream = {
+    id: 'va1', name: 'VA Disability', monthlyAmount: 1500, startAge: 60, taxTreatment: 'tax_free',
+  };
+  const vaResult = calculateIncomeStreamBenefits([vaDisability], 65);
+  assertApprox(vaResult.totalIncome, 18000, 0.01, 'VA disability income');
+  assertApprox(vaResult.byTaxTreatment.tax_free, 18000, 0.01, 'All in tax_free bucket');
+}
+
+// =============================================================================
+// INCOME STREAM WITHDRAWAL INTEGRATION TESTS
+// =============================================================================
+
+function testIncomeStreamWithdrawals(): void {
+  section('INCOME STREAM WITHDRAWAL INTEGRATION');
+
+  const account: Account = {
+    id: 'test',
+    name: 'Traditional 401k',
+    type: 'traditional_401k',
+    balance: 1000000,
+    annualContribution: 0,
+    contributionGrowthRate: 0,
+    returnRate: 0,
+  };
+
+  const profileNoSS: Profile = {
+    currentAge: 65,
+    retirementAge: 65,
+    lifeExpectancy: 68,
+    filingStatus: 'married_filing_jointly',
+    stateTaxRate: 0.05,
+    // No socialSecurityBenefit — it's in income streams now
+  };
+
+  const assumptions: Assumptions = {
+    inflationRate: 0,  // No inflation for simpler testing
+    safeWithdrawalRate: 0.04,
+    retirementReturnRate: 0,
+  };
+
+  console.log('\n--- Income Streams Reduce Withdrawal Need ---');
+
+  const ssStreams: IncomeStream[] = [
+    {
+      id: 'ss1',
+      name: 'Social Security',
+      monthlyAmount: 2500, // $30k/year
+      startAge: 67,
+      taxTreatment: 'social_security',
+    },
+  ];
+
+  const accum = calculateAccumulation([account], profileNoSS, usConfig);
+  const resultWithSS = calculateWithdrawals([account], profileNoSS, assumptions, accum, usConfig, ssStreams);
+
+  const is65 = resultWithSS.yearlyWithdrawals.find(y => y.age === 65);
+  const is67 = resultWithSS.yearlyWithdrawals.find(y => y.age === 67);
+
+  assert(is65 !== undefined, 'Has data for age 65');
+  assert(is67 !== undefined, 'Has data for age 67');
+
+  if (is65 && is67) {
+    assertApprox(is65.incomeStreamIncome, 0, 0.01, 'No income stream income at age 65');
+    assert(is67.incomeStreamIncome > 0, 'Income stream income at age 67 > $0');
+    assert(
+      is67.totalWithdrawal < is65.totalWithdrawal,
+      `Withdrawal decreases when income streams start ($${is67.totalWithdrawal.toFixed(0)} < $${is65.totalWithdrawal.toFixed(0)})`
+    );
+  }
+
+  console.log('\n--- Multiple Income Streams (SS + Pension) ---');
+
+  const multiStreams: IncomeStream[] = [
+    { id: 'ss1', name: 'Social Security', monthlyAmount: 2500, startAge: 67, taxTreatment: 'social_security' },
+    { id: 'pension1', name: 'State Pension', monthlyAmount: 3000, startAge: 65, taxTreatment: 'fully_taxable' },
+  ];
+
+  const resultMulti = calculateWithdrawals([account], profileNoSS, assumptions, accum, usConfig, multiStreams);
+
+  const multi65 = resultMulti.yearlyWithdrawals.find(y => y.age === 65);
+  const multi67 = resultMulti.yearlyWithdrawals.find(y => y.age === 67);
+
+  if (multi65 && multi67) {
+    assert(multi65.incomeStreamIncome > 0, 'Pension income at age 65');
+    assert(
+      multi67.incomeStreamIncome > multi65.incomeStreamIncome,
+      'More income at 67 when SS kicks in'
+    );
+    assert(
+      multi67.totalWithdrawal < multi65.totalWithdrawal,
+      'Less portfolio withdrawal needed at 67'
+    );
+  }
+
+  console.log('\n--- Tax-Free Income Stream ---');
+
+  const taxFreeStreams: IncomeStream[] = [
+    { id: 'va1', name: 'VA Disability', monthlyAmount: 2000, startAge: 65, taxTreatment: 'tax_free' },
+  ];
+
+  const resultTaxFree = calculateWithdrawals([account], profileNoSS, assumptions, accum, usConfig, taxFreeStreams);
+  const resultNone = calculateWithdrawals([account], profileNoSS, assumptions, accum, usConfig, []);
+
+  const tf65 = resultTaxFree.yearlyWithdrawals.find(y => y.age === 65);
+  const none65 = resultNone.yearlyWithdrawals.find(y => y.age === 65);
+
+  if (tf65 && none65) {
+    assert(tf65.incomeStreamIncome > 0, 'Tax-free income counted in income streams');
+    assert(
+      tf65.totalWithdrawal < none65.totalWithdrawal,
+      'Tax-free income reduces withdrawal need'
+    );
+    assert(
+      tf65.federalTax <= none65.federalTax + 1,
+      'Tax-free income does not increase federal tax'
+    );
+  }
+
+  console.log('\n--- No Income Streams (empty array) ---');
+
+  const resultEmpty = calculateWithdrawals([account], profileNoSS, assumptions, accum, usConfig, []);
+  const empty65 = resultEmpty.yearlyWithdrawals.find(y => y.age === 65);
+  if (empty65) {
+    assertApprox(empty65.incomeStreamIncome, 0, 0.01, 'Empty streams = $0 income stream income');
+  }
+}
+
+// =============================================================================
 // RUN ALL TESTS
 // =============================================================================
 
@@ -1641,6 +1819,8 @@ function runAllTests(): void {
   testWithdrawalWithConfigurableAge();
   testWithdrawalDefaults();
   testEarlyWithdrawalPenalties();
+  testIncomeStreamCalculator();
+  testIncomeStreamWithdrawals();
 
   console.log('\n' + '='.repeat(60));
   console.log('TEST SUMMARY');

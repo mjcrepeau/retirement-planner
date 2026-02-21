@@ -1,9 +1,11 @@
 import { useState } from 'react';
-import { Account, RetirementResult, getTaxTreatment } from '../types';
+import { Account, RetirementResult, IncomeStream, IncomeTaxTreatment, getTaxTreatment } from '../types';
+import { CHART_COLORS } from '../utils/constants';
 
 interface DataTableWithdrawalProps {
   accounts: Account[];
   result: RetirementResult;
+  incomeStreams?: IncomeStream[];
 }
 
 function formatCurrency(value: number): string {
@@ -19,9 +21,9 @@ function formatPercent(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
 }
 
-type ViewMode = 'income' | 'withdrawals' | 'balances' | 'taxes';
+type ViewMode = 'income' | 'withdrawals' | 'balances' | 'taxes' | 'incomeStreams';
 
-export function DataTableWithdrawal({ accounts, result }: DataTableWithdrawalProps) {
+export function DataTableWithdrawal({ accounts, result, incomeStreams = [] }: DataTableWithdrawalProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('income');
   const [expandedPenaltyRows, setExpandedPenaltyRows] = useState<Set<number>>(new Set());
@@ -40,7 +42,7 @@ export function DataTableWithdrawal({ accounts, result }: DataTableWithdrawalPro
 
   if (!result.yearlyWithdrawals.length) return null;
 
-  // Get color class based on tax treatment
+  // Get color class based on account tax treatment
   const getColorClass = (accountType: Account['type']): string => {
     const treatment = getTaxTreatment(accountType);
     switch (treatment) {
@@ -48,6 +50,15 @@ export function DataTableWithdrawal({ accounts, result }: DataTableWithdrawalPro
       case 'roth': return 'text-green-600 dark:text-green-400';
       case 'taxable': return 'text-amber-600 dark:text-amber-400';
       case 'hsa': return 'text-purple-600 dark:text-purple-400';
+    }
+  };
+
+  // Get inline color for income stream tax treatment
+  const getStreamColor = (taxTreatment: IncomeTaxTreatment): string => {
+    switch (taxTreatment) {
+      case 'social_security': return CHART_COLORS.socialSecurity;
+      case 'fully_taxable': return CHART_COLORS.pension;
+      case 'tax_free': return CHART_COLORS.taxFreeIncome;
     }
   };
 
@@ -122,6 +133,16 @@ export function DataTableWithdrawal({ accounts, result }: DataTableWithdrawalPro
             >
               Tax Details
             </button>
+            <button
+              onClick={() => setViewMode('incomeStreams')}
+              className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px whitespace-nowrap ${
+                viewMode === 'incomeStreams'
+                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+              }`}
+            >
+              Income Streams
+            </button>
           </div>
 
           <div className="overflow-x-auto">
@@ -132,7 +153,7 @@ export function DataTableWithdrawal({ accounts, result }: DataTableWithdrawalPro
                     <th className="text-left py-2 px-2 font-medium text-gray-700 dark:text-gray-300 sticky left-0 bg-white dark:bg-gray-800">Age</th>
                     <th className="text-right py-2 px-2 font-medium text-gray-700 dark:text-gray-300">Target Spending</th>
                     <th className="text-right py-2 px-2 font-medium text-gray-700 dark:text-gray-300">Withdrawals</th>
-                    <th className="text-right py-2 px-2 font-medium text-indigo-600 dark:text-indigo-400">Social Security</th>
+                    <th className="text-right py-2 px-2 font-medium" style={{ color: CHART_COLORS.retirementIncome }}>Retirement Income</th>
                     <th className="text-right py-2 px-2 font-medium text-gray-700 dark:text-gray-300">Gross Income</th>
                     <th className="text-right py-2 px-2 font-medium text-red-600 dark:text-red-400">Total Taxes</th>
                     <th className="text-right py-2 px-2 font-medium text-teal-600 dark:text-teal-400">After-Tax Income</th>
@@ -144,8 +165,8 @@ export function DataTableWithdrawal({ accounts, result }: DataTableWithdrawalPro
                       <td className="py-2 px-2 font-medium text-gray-900 dark:text-white sticky left-0 bg-white dark:bg-gray-800">{yearData.age}</td>
                       <td className="py-2 px-2 text-right font-mono text-gray-600 dark:text-gray-400">{formatCurrency(yearData.targetSpending)}</td>
                       <td className="py-2 px-2 text-right font-mono text-gray-900 dark:text-white">{formatCurrency(yearData.totalWithdrawal)}</td>
-                      <td className="py-2 px-2 text-right font-mono text-indigo-600 dark:text-indigo-400">
-                        {yearData.socialSecurityIncome > 0 ? formatCurrency(yearData.socialSecurityIncome) : '-'}
+                      <td className="py-2 px-2 text-right font-mono" style={{ color: CHART_COLORS.retirementIncome }}>
+                        {(yearData.governmentBenefitIncome + yearData.incomeStreamIncome) > 0 ? formatCurrency(yearData.governmentBenefitIncome + yearData.incomeStreamIncome) : '-'}
                       </td>
                       <td className="py-2 px-2 text-right font-mono text-gray-900 dark:text-white">{formatCurrency(yearData.grossIncome)}</td>
                       <td className="py-2 px-2 text-right font-mono text-red-600 dark:text-red-400">{formatCurrency(yearData.totalTax)}</td>
@@ -160,8 +181,8 @@ export function DataTableWithdrawal({ accounts, result }: DataTableWithdrawalPro
                     <td className="py-2 px-2 text-right font-mono font-medium text-gray-900 dark:text-white">
                       {formatCurrency(result.yearlyWithdrawals.reduce((sum, y) => sum + y.totalWithdrawal, 0))}
                     </td>
-                    <td className="py-2 px-2 text-right font-mono font-medium text-indigo-600 dark:text-indigo-400">
-                      {formatCurrency(result.yearlyWithdrawals.reduce((sum, y) => sum + y.socialSecurityIncome, 0))}
+                    <td className="py-2 px-2 text-right font-mono font-medium" style={{ color: CHART_COLORS.retirementIncome }}>
+                      {formatCurrency(result.yearlyWithdrawals.reduce((sum, y) => sum + y.governmentBenefitIncome + y.incomeStreamIncome, 0))}
                     </td>
                     <td className="py-2 px-2 text-right font-mono font-medium text-gray-900 dark:text-white">
                       {formatCurrency(result.yearlyWithdrawals.reduce((sum, y) => sum + y.grossIncome, 0))}
@@ -337,6 +358,67 @@ export function DataTableWithdrawal({ accounts, result }: DataTableWithdrawalPro
                 </tfoot>
               </table>
             )}
+
+            {viewMode === 'incomeStreams' && incomeStreams.length > 0 && (
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 dark:border-gray-700">
+                    <th className="text-left py-2 px-2 font-medium text-gray-700 dark:text-gray-300 sticky left-0 bg-white dark:bg-gray-800">Age</th>
+                    {incomeStreams.map(stream => (
+                      <th key={stream.id} className="text-right py-2 px-2 font-medium" style={{ color: getStreamColor(stream.taxTreatment) }}>
+                        {stream.name}
+                      </th>
+                    ))}
+                    {result.yearlyWithdrawals.some(y => y.governmentBenefitIncome > 0) && (
+                      <th className="text-right py-2 px-2 font-medium" style={{ color: CHART_COLORS.socialSecurity }}>
+                        Gov. Benefits
+                      </th>
+                    )}
+                    <th className="text-right py-2 px-2 font-medium text-gray-700 dark:text-gray-300">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.yearlyWithdrawals.map((yearData) => {
+                    const activeStreams = incomeStreams.filter(s => yearData.age >= s.startAge);
+                    const totalMonthly = activeStreams.reduce((sum, s) => sum + s.monthlyAmount, 0);
+
+                    return (
+                      <tr key={yearData.age} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                        <td className="py-2 px-2 font-medium text-gray-900 dark:text-white sticky left-0 bg-white dark:bg-gray-800">{yearData.age}</td>
+                        {incomeStreams.map(stream => {
+                          if (yearData.age < stream.startAge || totalMonthly === 0) {
+                            return <td key={stream.id} className="py-2 px-2 text-right font-mono text-gray-400 dark:text-gray-600">-</td>;
+                          }
+                          const ratio = stream.monthlyAmount / totalMonthly;
+                          const amount = yearData.incomeStreamIncome * ratio;
+                          return (
+                            <td key={stream.id} className="py-2 px-2 text-right font-mono" style={{ color: getStreamColor(stream.taxTreatment) }}>
+                              {formatCurrency(amount)}
+                            </td>
+                          );
+                        })}
+                        {result.yearlyWithdrawals.some(y => y.governmentBenefitIncome > 0) && (
+                          <td className="py-2 px-2 text-right font-mono text-gray-600 dark:text-gray-400">
+                            {yearData.governmentBenefitIncome > 0 ? formatCurrency(yearData.governmentBenefitIncome) : '-'}
+                          </td>
+                        )}
+                        <td className="py-2 px-2 text-right font-mono font-medium text-gray-900 dark:text-white">
+                          {(yearData.governmentBenefitIncome + yearData.incomeStreamIncome) > 0
+                            ? formatCurrency(yearData.governmentBenefitIncome + yearData.incomeStreamIncome)
+                            : '-'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+
+            {viewMode === 'incomeStreams' && incomeStreams.length === 0 && (
+              <p className="text-gray-500 dark:text-gray-400 text-sm py-8 text-center">
+                No income streams configured. Add Social Security, pensions, or other income in the Income Streams panel.
+              </p>
+            )}
           </div>
 
           {/* Legend */}
@@ -358,8 +440,16 @@ export function DataTableWithdrawal({ accounts, result }: DataTableWithdrawalPro
               <span className="text-gray-600 dark:text-gray-400">HSA</span>
             </div>
             <div className="flex items-center gap-1">
-              <span className="w-3 h-3 rounded bg-indigo-500"></span>
+              <span className="w-3 h-3 rounded" style={{ backgroundColor: CHART_COLORS.socialSecurity }}></span>
               <span className="text-gray-600 dark:text-gray-400">Social Security</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="w-3 h-3 rounded" style={{ backgroundColor: CHART_COLORS.pension }}></span>
+              <span className="text-gray-600 dark:text-gray-400">Pension</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="w-3 h-3 rounded" style={{ backgroundColor: CHART_COLORS.taxFreeIncome }}></span>
+              <span className="text-gray-600 dark:text-gray-400">Tax-Free Income</span>
             </div>
           </div>
         </div>

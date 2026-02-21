@@ -278,7 +278,7 @@ Tests cover:
 
 ### Contributors
 - **bwillem** ([@bguenther3](mailto:bguenther3@gmail.com)) - Multi-country support (Canada)
-- **Josh Smith** ([josh.smith@stopsoldiersuicide.org](mailto:josh.smith@stopsoldiersuicide.org)) - Configurable account withdrawal age
+- **Josh Smith** ([smithgotsurf@gmail.com](mailto:smithgotsurf@gmail.com)) - Configurable account withdrawal age
 
 ## Disclaimer
 

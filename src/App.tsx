@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
-import { Account, Profile, Assumptions } from './types';
-import { DEFAULT_PROFILE, DEFAULT_ASSUMPTIONS } from './utils/constants';
+import { Account, Profile, Assumptions, IncomeStream } from './types';
+import { DEFAULT_PROFILE, DEFAULT_ASSUMPTIONS, DEFAULT_INCOME_STREAMS } from './utils/constants';
 import { useRetirementCalc } from './hooks/useRetirementCalc';
 import { useLocalStorage, useDarkMode } from './hooks/useLocalStorage';
 import { CountryProvider, useCountry } from './contexts/CountryContext';
@@ -10,6 +10,7 @@ import { Layout } from './components/Layout';
 import { AccountList } from './components/AccountList';
 import { ProfileForm } from './components/ProfileForm';
 import { AssumptionsForm } from './components/AssumptionsForm';
+import { IncomeStreamList } from './components/IncomeStreamList';
 import { SummaryCards } from './components/SummaryCards';
 import { ChartAccumulation } from './components/ChartAccumulation';
 import { ChartDrawdown } from './components/ChartDrawdown';
@@ -136,6 +137,11 @@ function AppContent() {
     DEFAULT_ASSUMPTIONS
   );
 
+  const [incomeStreams, setIncomeStreams, resetIncomeStreams] = useLocalStorage<IncomeStream[]>(
+    'retirement-planner-income-streams',
+    DEFAULT_INCOME_STREAMS
+  );
+
   // Dark mode
   const [isDarkMode, toggleDarkMode] = useDarkMode();
 
@@ -144,7 +150,7 @@ function AppContent() {
   const [expandedSection, setExpandedSection] = useState<string | null>('accounts');
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
-  const { accumulation, retirement } = useRetirementCalc(accounts, profile, assumptions, countryConfig);
+  const { accumulation, retirement } = useRetirementCalc(accounts, profile, assumptions, countryConfig, incomeStreams);
 
   const handleAddAccount = (account: Account) => {
     setAccounts(prev => [...prev, account]);
@@ -160,6 +166,20 @@ function AppContent() {
     setAccounts(prev => prev.filter(acc => acc.id !== id));
   };
 
+  const handleAddIncomeStream = (stream: IncomeStream) => {
+    setIncomeStreams(prev => [...prev, stream]);
+  };
+
+  const handleUpdateIncomeStream = (updatedStream: IncomeStream) => {
+    setIncomeStreams(prev =>
+      prev.map(s => (s.id === updatedStream.id ? updatedStream : s))
+    );
+  };
+
+  const handleDeleteIncomeStream = (id: string) => {
+    setIncomeStreams(prev => prev.filter(s => s.id !== id));
+  };
+
   const toggleSection = (section: string) => {
     setExpandedSection(prev => (prev === section ? null : section));
   };
@@ -172,10 +192,11 @@ function AppContent() {
     resetAccounts();
     resetProfile();
     resetAssumptions();
+    resetIncomeStreams();
     setShowResetConfirm(false);
     // Force reload to get fresh default accounts with new UUIDs
     window.location.reload();
-  }, [resetAccounts, resetProfile, resetAssumptions]);
+  }, [resetAccounts, resetProfile, resetAssumptions, resetIncomeStreams]);
 
   const cancelReset = useCallback(() => {
     setShowResetConfirm(false);
@@ -278,6 +299,36 @@ function AppContent() {
             {expandedSection === 'profile' && (
               <div className="px-4 pb-4">
                 <ProfileForm profile={profile} onChange={setProfile} />
+              </div>
+            )}
+          </div>
+
+          {/* Income Streams Section */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+            <button
+              onClick={() => toggleSection('incomeStreams')}
+              className="w-full px-4 py-3 flex justify-between items-center hover:bg-gray-50 dark:hover:bg-gray-700 rounded-t-lg"
+            >
+              <span className="font-medium text-gray-900 dark:text-white">Income Streams</span>
+              <svg
+                className={`w-5 h-5 text-gray-500 dark:text-gray-400 transition-transform ${
+                  expandedSection === 'incomeStreams' ? 'rotate-180' : ''
+                }`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {expandedSection === 'incomeStreams' && (
+              <div className="px-4 pb-4">
+                <IncomeStreamList
+                  incomeStreams={incomeStreams}
+                  onAdd={handleAddIncomeStream}
+                  onUpdate={handleUpdateIncomeStream}
+                  onDelete={handleDeleteIncomeStream}
+                />
               </div>
             )}
           </div>
@@ -405,7 +456,7 @@ function AppContent() {
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
                       Annual Retirement Income
                     </h3>
-                    <ChartIncome result={retirement} isDarkMode={isDarkMode} />
+                    <ChartIncome result={retirement} incomeStreams={incomeStreams} isDarkMode={isDarkMode} />
                   </div>
 
                   <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
@@ -415,7 +466,7 @@ function AppContent() {
                     <ChartTax result={retirement} isDarkMode={isDarkMode} />
                   </div>
 
-                  <DataTableWithdrawal accounts={accounts} result={retirement} />
+                  <DataTableWithdrawal accounts={accounts} result={retirement} incomeStreams={incomeStreams} />
                 </div>
               )}
 
@@ -444,6 +495,11 @@ function App() {
       ...DEFAULT_PROFILE,
       ...defaultProfile,
     }));
+
+    // Reset income streams — default SS for US, empty for Canada
+    localStorage.setItem('retirement-planner-income-streams',
+      JSON.stringify(newCountry === 'US' ? DEFAULT_INCOME_STREAMS : [])
+    );
 
     // Force reload to reinitialize with new country defaults
     window.location.reload();

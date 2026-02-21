@@ -10,11 +10,12 @@ import {
   Legend,
   ReferenceLine,
 } from 'recharts';
-import { RetirementResult } from '../types';
+import { RetirementResult, IncomeStream } from '../types';
 import { CHART_COLORS } from '../utils/constants';
 
 interface ChartIncomeProps {
   result: RetirementResult;
+  incomeStreams?: IncomeStream[];
   isDarkMode?: boolean;
 }
 
@@ -57,12 +58,12 @@ function CustomTooltip({ active, payload, label, result }: CustomTooltipProps) {
           <span style={{ color: CHART_COLORS.pretax }}>Withdrawals:</span>
           <span className="font-medium text-gray-900 dark:text-white">{formatTooltipValue(yearData.totalWithdrawal)}</span>
         </div>
-        {yearData.socialSecurityIncome > 0 && (
-          <div className="flex justify-between gap-4">
-            <span style={{ color: CHART_COLORS.socialSecurity }}>Social Security:</span>
-            <span className="font-medium text-gray-900 dark:text-white">{formatTooltipValue(yearData.socialSecurityIncome)}</span>
+        {payload?.filter(p => ['socialSecurity', 'pension', 'taxFreeIncome'].includes(p.dataKey) && p.value > 0).map(p => (
+          <div key={p.dataKey} className="flex justify-between gap-4">
+            <span style={{ color: p.color }}>{p.name}:</span>
+            <span className="font-medium text-gray-900 dark:text-white">{formatTooltipValue(p.value)}</span>
           </div>
-        )}
+        ))}
         <div className="flex justify-between gap-4 border-t border-gray-200 dark:border-gray-600 pt-1 mt-1">
           <span className="text-gray-600 dark:text-gray-400">Gross Income:</span>
           <span className="font-medium text-gray-900 dark:text-white">{formatTooltipValue(yearData.grossIncome)}</span>
@@ -85,22 +86,52 @@ function CustomTooltip({ active, payload, label, result }: CustomTooltipProps) {
   );
 }
 
-export function ChartIncome({ result, isDarkMode = false }: ChartIncomeProps) {
+export function ChartIncome({ result, incomeStreams = [], isDarkMode = false }: ChartIncomeProps) {
   // Colors based on dark mode
   const gridColor = isDarkMode ? '#374151' : '#e5e7eb';
   const tickColor = isDarkMode ? '#9ca3af' : '#6b7280';
   const tickLineColor = isDarkMode ? '#4b5563' : '#d1d5db';
+  // Determine which income stream bands have data
+  const hasPensionStreams = incomeStreams.some(s => s.taxTreatment === 'fully_taxable');
+  const hasTaxFreeStreams = incomeStreams.some(s => s.taxTreatment === 'tax_free');
+
   // Transform data for the chart
   // Show gross income as stacked bars (positive), taxes as separate negative bar
-  const chartData = result.yearlyWithdrawals.map(year => ({
-    age: year.age,
-    withdrawals: year.totalWithdrawal,
-    socialSecurity: year.socialSecurityIncome,
-    taxes: year.totalTax, // Keep positive for separate display
-    afterTax: year.afterTaxIncome,
-    gross: year.grossIncome,
-    // For the net visualization, we'll show after-tax as a line
-  }));
+  const chartData = result.yearlyWithdrawals.map(year => {
+    let ssIncome = 0;
+    let pensionIncome = 0;
+    let taxFreeIncome = 0;
+
+    // Split incomeStreamIncome proportionally by tax treatment
+    const activeStreams = incomeStreams.filter(s => year.age >= s.startAge);
+    const totalMonthly = activeStreams.reduce((sum, s) => sum + s.monthlyAmount, 0);
+
+    if (totalMonthly > 0 && year.incomeStreamIncome > 0) {
+      for (const stream of activeStreams) {
+        const ratio = stream.monthlyAmount / totalMonthly;
+        const streamAmount = year.incomeStreamIncome * ratio;
+        switch (stream.taxTreatment) {
+          case 'social_security': ssIncome += streamAmount; break;
+          case 'fully_taxable': pensionIncome += streamAmount; break;
+          case 'tax_free': taxFreeIncome += streamAmount; break;
+        }
+      }
+    }
+
+    // Government benefits (Canada CPP/OAS) go into the SS band
+    ssIncome += year.governmentBenefitIncome;
+
+    return {
+      age: year.age,
+      withdrawals: year.totalWithdrawal,
+      socialSecurity: ssIncome,
+      pension: pensionIncome,
+      taxFreeIncome: taxFreeIncome,
+      taxes: year.totalTax,
+      afterTax: year.afterTaxIncome,
+      gross: year.grossIncome,
+    };
+  });
 
   return (
     <div className="w-full h-80 touch-pan-y">
@@ -141,6 +172,24 @@ export function ChartIncome({ result, isDarkMode = false }: ChartIncomeProps) {
             fill={CHART_COLORS.socialSecurity}
             fillOpacity={0.8}
           />
+          {hasPensionStreams && (
+            <Bar
+              dataKey="pension"
+              name="Pension"
+              stackId="income"
+              fill={CHART_COLORS.pension}
+              fillOpacity={0.8}
+            />
+          )}
+          {hasTaxFreeStreams && (
+            <Bar
+              dataKey="taxFreeIncome"
+              name="Tax-Free Income"
+              stackId="income"
+              fill={CHART_COLORS.taxFreeIncome}
+              fillOpacity={0.8}
+            />
+          )}
           {/* After-tax income line - the key metric */}
           <Line
             type="monotone"

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Account, Profile, Assumptions, AccumulationResult, RetirementResult } from '../types';
+import { Account, Profile, Assumptions, AccumulationResult, RetirementResult, IncomeStream } from '../types';
 import { calculateAccumulation } from '../utils/projections';
 import { calculateWithdrawals } from '../utils/withdrawals';
 import type { CountryConfig } from '../countries';
@@ -13,7 +13,8 @@ export function useRetirementCalc(
   accounts: Account[],
   profile: Profile,
   assumptions: Assumptions,
-  countryConfig: CountryConfig
+  countryConfig: CountryConfig,
+  incomeStreams: IncomeStream[]
 ): UseRetirementCalcResult {
   const accumulation = useMemo(() => {
     if (accounts.length === 0) {
@@ -38,8 +39,8 @@ export function useRetirementCalc(
         accountDepletionAges: {},
       };
     }
-    return calculateWithdrawals(accounts, profile, assumptions, accumulation, countryConfig);
-  }, [accounts, profile, assumptions, accumulation, countryConfig]);
+    return calculateWithdrawals(accounts, profile, assumptions, accumulation, countryConfig, incomeStreams);
+  }, [accounts, profile, assumptions, accumulation, countryConfig, incomeStreams]);
 
   return { accumulation, retirement };
 }

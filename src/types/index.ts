@@ -28,6 +28,16 @@ export type FilingStatus = 'single' | 'married_filing_jointly';
 
 export type TaxTreatment = 'pretax' | 'roth' | 'taxable' | 'hsa';
 
+export type IncomeTaxTreatment = 'social_security' | 'fully_taxable' | 'tax_free';
+
+export interface IncomeStream {
+  id: string;
+  name: string;
+  monthlyAmount: number;      // in today's dollars
+  startAge: number;
+  taxTreatment: IncomeTaxTreatment;
+}
+
 export interface AccountWithdrawalRules {
   startAge: number;  // Age when withdrawals can begin
 }
@@ -93,7 +103,8 @@ export interface YearlyWithdrawal {
   withdrawals: Record<string, number>; // accountId -> withdrawal
   remainingBalances: Record<string, number>; // accountId -> remaining balance
   totalWithdrawal: number;
-  socialSecurityIncome: number;
+  governmentBenefitIncome: number;  // was socialSecurityIncome — Canada CPP/OAS only
+  incomeStreamIncome: number;       // user-defined income streams (SS, pensions, etc.)
   grossIncome: number;
   federalTax: number;
   stateTax: number;
@@ -208,4 +219,15 @@ export function is401k(type: AccountType): boolean {
 
 export function isTraditional(type: string): boolean {
   return type === 'traditional_401k' || type === 'traditional_ira';
+}
+
+export function getIncomeTaxTreatmentLabel(treatment: IncomeTaxTreatment): string {
+  switch (treatment) {
+    case 'social_security':
+      return 'Social Security';
+    case 'fully_taxable':
+      return 'Pension / Fully Taxable';
+    case 'tax_free':
+      return 'Tax-Free';
+  }
 }

@@ -1,4 +1,6 @@
 import { TaxBracket, RMDEntry } from '../types';
+import type { IncomeStream } from '../types';
+import { v4 as uuidv4 } from 'uuid';
 
 // 2024 Federal Tax Brackets - Married Filing Jointly
 export const TAX_BRACKETS_MFJ: TaxBracket[] = [
@@ -112,6 +114,9 @@ export const CHART_COLORS = {
   tax: '#ef4444', // red
   socialSecurity: '#6366f1', // indigo
   spending: '#0d9488', // teal
+  pension: '#ec4899',          // pink
+  taxFreeIncome: '#06b6d4',    // cyan
+  retirementIncome: '#0ea5e9', // sky
 };
 
 // Default values for new app state
@@ -123,8 +128,6 @@ export const DEFAULT_PROFILE = {
   region: 'CA', // California
   filingStatus: 'married_filing_jointly' as const,
   stateTaxRate: 0.05,
-  socialSecurityBenefit: 30000,
-  socialSecurityStartAge: 67,
 };
 
 export const DEFAULT_ASSUMPTIONS = {
@@ -132,3 +135,13 @@ export const DEFAULT_ASSUMPTIONS = {
   safeWithdrawalRate: 0.04,
   retirementReturnRate: 0.05,
 };
+
+export const DEFAULT_INCOME_STREAMS: IncomeStream[] = [
+  {
+    id: uuidv4(),
+    name: 'Social Security',
+    monthlyAmount: 2500,
+    startAge: 67,
+    taxTreatment: 'social_security',
+  },
+];
