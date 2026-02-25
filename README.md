@@ -16,7 +16,7 @@ The calculator supports retirement planning for both **United States** and **Can
 #### United States
 - **Account Types**: Traditional 401(k), Roth 401(k), Traditional IRA, Roth IRA, Taxable Brokerage, HSA
 - **Tax System**: Federal income tax brackets, state tax rates, capital gains rates
-- **Benefits**: Social Security integration with configurable start age
+- **Benefits**: Social Security modeled via Income Streams (see below)
 - **RMDs**: Required Minimum Distributions starting at age 73
 
 #### Canada
@@ -34,10 +34,21 @@ Switching countries automatically resets accounts and profile to country-appropr
 - **Contribution Growth**: Model salary increases affecting future contributions
 - **Configurable Withdrawal Ages**: Set when withdrawals begin from each account to model early retirement scenarios
 
+### Income Streams
+Model multiple sources of retirement income beyond portfolio withdrawals:
+- **Flexible Sources**: Social Security, pensions, annuities, part-time work, VA disability, rental income, etc.
+- **Tax Treatment Options**: Each stream is assigned one of four tax categories:
+  - *Social Security* — 85% taxable
+  - *Pension / Annuity* — 100% taxable as ordinary income
+  - *Other Income* — 100% taxable as ordinary income
+  - *Tax-Free* — excluded from taxable income (e.g., VA disability)
+- **Start & End Ages**: Configure when each stream begins and optionally when it ends
+- **Inflation Adjusted**: Amounts are stored in today's dollars and automatically adjusted for inflation
+
 ### Retirement Projections
 - **Accumulation Phase**: Project portfolio growth from now until retirement with compound interest and contributions
 - **Withdrawal Phase**: Simulate retirement spending with tax-optimized withdrawal strategies
-- **Social Security Integration**: Include Social Security benefits starting at your chosen age
+- **Income Stream Integration**: Income streams reduce the amount needed from portfolio withdrawals
 - **Inflation Adjustment**: All projections account for inflation over time
 
 ### Tax-Optimized Withdrawals
@@ -68,7 +79,7 @@ The withdrawal algorithm follows a tax-efficient strategy:
 ### Visualizations
 - **Accumulation Chart**: Stacked area chart showing portfolio growth by account
 - **Drawdown Chart**: Portfolio balance through retirement years
-- **Income Chart**: Annual retirement income breakdown (withdrawals, Social Security, taxes)
+- **Income Chart**: Annual retirement income breakdown (withdrawals, income streams by tax treatment, taxes)
 - **Tax Chart**: Tax burden over time
 - **Composition Chart**: Pie chart of portfolio allocation by tax treatment
 
@@ -93,7 +104,7 @@ Full visibility into how every number is calculated:
 
 - **Year-by-Year Data Tables**: Expandable tables showing detailed projections:
   - *Accumulation Phase*: Summary, per-account balances, and contributions (with employer match)
-  - *Withdrawal Phase*: Income & spending, withdrawals by account, remaining balances, and tax details
+  - *Withdrawal Phase*: Income & spending, income streams breakdown, withdrawals by account, remaining balances, and tax details
   - Lifetime totals and color-coded by tax treatment
 
 - **Expandable Summary Cards**: Click any summary metric to see:
@@ -172,6 +183,8 @@ src/
 │   ├── CountrySelector.tsx       # Country switching dropdown
 │   ├── DataTableAccumulation.tsx # Year-by-year accumulation data
 │   ├── DataTableWithdrawal.tsx   # Year-by-year withdrawal data
+│   ├── IncomeStreamForm.tsx     # Form for adding/editing income streams
+│   ├── IncomeStreamList.tsx     # List of income streams
 │   ├── Layout.tsx                # App layout with header/footer
 │   ├── MethodologyPanel.tsx      # Formulas & assumptions reference
 │   ├── NumberInput.tsx           # String to number conversion
@@ -201,6 +214,7 @@ src/
 │   └── index.ts              # TypeScript type definitions
 ├── utils/
 │   ├── constants.ts          # Tax brackets, RMD tables, defaults
+│   ├── incomeStreams.ts      # Income stream tax calculations
 │   ├── projections.ts        # Accumulation phase calculations
 │   ├── taxes.ts              # Tax calculation functions
 │   └── withdrawals.ts        # Withdrawal phase simulation
@@ -223,7 +237,7 @@ For each year until retirement:
 For each year of retirement:
 1. Calculate Required Minimum Distribution (if age 73+)
 2. Determine target spending (safe withdrawal rate + inflation)
-3. Subtract Social Security income from spending need
+3. Subtract income streams and government benefits from spending need
 4. Withdraw from accounts in tax-optimized order
 5. Apply investment returns to remaining balance
 6. Calculate federal and state taxes
@@ -232,7 +246,7 @@ For each year of retirement:
 - Investment returns are applied annually
 - Contributions are made at year-end
 - RMDs follow the IRS Uniform Lifetime Table
-- Social Security benefits grow with inflation
+- Income streams and government benefits grow with inflation
 - Tax brackets are 2024 values (not inflation-adjusted)
 
 ## Configuration
@@ -246,8 +260,8 @@ For each year of retirement:
 | Inflation Rate | 3% |
 | Safe Withdrawal Rate | 4% |
 | Retirement Return Rate | 5% |
-| Social Security Benefit | $30,000/year |
-| Social Security Start Age | 67 |
+| CPP Benefit (Canada) | $30,000/year |
+| CPP Start Age (Canada) | 67 |
 
 ### Account Defaults
 | Setting | Default |
@@ -272,7 +286,7 @@ Tests cover:
 - Canadian account type recognition
 - Edge cases (zero balances, long retirements, etc.)
 
-**Current test count: 85 tests**
+**Current test count: 166 tests**
 
 ## Credits
 
