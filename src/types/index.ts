@@ -71,8 +71,8 @@ export interface Profile {
   filingStatus?: FilingStatus; // US only
   stateTaxRate?: number; // US only (as decimal), CA uses province
   annualIncome?: number; // For CA RRSP contribution room calculation
-  socialSecurityBenefit?: number; // CPP for CA, Social Security for US (annual)
-  socialSecurityStartAge?: number; // CPP/SS start age
+  socialSecurityBenefit?: number; // Canada CPP only; US uses income streams (annual)
+  socialSecurityStartAge?: number; // Canada CPP start age; US uses income streams
   secondaryBenefitStartAge?: number; // OAS for CA
   secondaryBenefitAmount?: number; // OAS amount for CA
 }
@@ -227,7 +227,7 @@ export function getIncomeTaxTreatmentLabel(treatment: IncomeTaxTreatment): strin
     case 'social_security':
       return 'Social Security';
     case 'fully_taxable':
-      return 'Pension';
+      return 'Pension / Annuity';
     case 'other_income':
       return 'Other Income';
     case 'tax_free':

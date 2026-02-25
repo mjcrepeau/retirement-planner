@@ -14,6 +14,13 @@ const inputErrorClassName = "w-full px-3 py-2 border border-red-500 rounded-md s
 
 const TAX_TREATMENTS: IncomeTaxTreatment[] = ['social_security', 'fully_taxable', 'other_income', 'tax_free'];
 
+const TAX_TREATMENT_DESCRIPTIONS: Record<IncomeTaxTreatment, string> = {
+  social_security: '85% taxable at your ordinary income rate',
+  fully_taxable: '100% taxable as ordinary income',
+  other_income: '100% taxable as ordinary income',
+  tax_free: 'Not included in taxable income (e.g., VA disability)',
+};
+
 export function IncomeStreamForm({ incomeStream, onSave, onCancel }: IncomeStreamFormProps) {
   const [formData, setFormData] = useState<Omit<IncomeStream, 'id'>>(() => {
     if (incomeStream) {
@@ -157,6 +164,9 @@ export function IncomeStreamForm({ incomeStream, onSave, onCancel }: IncomeStrea
             </option>
           ))}
         </select>
+        <p className="text-gray-500 dark:text-gray-400 text-xs mt-1">
+          {TAX_TREATMENT_DESCRIPTIONS[formData.taxTreatment]}
+        </p>
       </div>
 
       <div className="flex justify-end gap-3 pt-4">

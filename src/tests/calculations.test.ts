@@ -1832,6 +1832,39 @@ function testIncomeStreamWithdrawals(): void {
   if (empty65) {
     assertApprox(empty65.incomeStreamIncome, 0, 0.01, 'Empty streams = $0 income stream income');
   }
+
+  console.log('\n--- Income Stream with endAge stops after endAge ---');
+
+  const endAgeStreams: IncomeStream[] = [
+    { id: 'job1', name: 'Part-time Work', monthlyAmount: 2000, startAge: 65, endAge: 66, taxTreatment: 'other_income' },
+  ];
+
+  const profileEndAge: Profile = {
+    currentAge: 65,
+    retirementAge: 65,
+    lifeExpectancy: 70,
+    filingStatus: 'married_filing_jointly',
+    stateTaxRate: 0.05,
+  };
+
+  const accumEndAge = calculateAccumulation([account], profileEndAge, usConfig);
+  const resultEndAge = calculateWithdrawals([account], profileEndAge, assumptions, accumEndAge, usConfig, endAgeStreams);
+
+  const ea65 = resultEndAge.yearlyWithdrawals.find(y => y.age === 65);
+  const ea66 = resultEndAge.yearlyWithdrawals.find(y => y.age === 66);
+  const ea67 = resultEndAge.yearlyWithdrawals.find(y => y.age === 67);
+
+  assert(ea65 !== undefined && ea66 !== undefined && ea67 !== undefined, 'Has data for ages 65-67');
+
+  if (ea65 && ea66 && ea67) {
+    assert(ea65.incomeStreamIncome > 0, 'Income stream active at age 65');
+    assert(ea66.incomeStreamIncome > 0, 'Income stream active at endAge 66 (inclusive)');
+    assertApprox(ea67.incomeStreamIncome, 0, 0.01, 'Income stream stopped after endAge');
+    assert(
+      ea67.totalWithdrawal > ea65.totalWithdrawal,
+      `Withdrawal increases after stream ends ($${ea67.totalWithdrawal.toFixed(0)} > $${ea65.totalWithdrawal.toFixed(0)})`
+    );
+  }
 }
 
 // =============================================================================

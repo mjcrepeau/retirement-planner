@@ -122,14 +122,17 @@ export function calculateWithdrawals(
       portfolioDepletionAge = age;
     }
 
+    // Common inflation factor for this year
+    const yearsFromNow = age - profile.currentAge;
+    const inflationMultiplier = Math.pow(1 + assumptions.inflationRate, yearsFromNow);
+
     // Calculate government retirement benefits (Social Security, CPP/OAS, etc.)
     let governmentBenefits = 0;
     if (countryConfig) {
       const benefits = countryConfig.calculateRetirementBenefits(profile, age, 0);
       governmentBenefits = benefits.reduce((sum, b) => sum + b.annualAmount, 0);
       // Adjust for inflation
-      const yearsFromNow = age - profile.currentAge;
-      governmentBenefits *= Math.pow(1 + assumptions.inflationRate, yearsFromNow);
+      governmentBenefits *= inflationMultiplier;
     } else {
       // Fallback to US Social Security
       if (
@@ -137,9 +140,7 @@ export function calculateWithdrawals(
         profile.socialSecurityStartAge &&
         age >= profile.socialSecurityStartAge
       ) {
-        const yearsFromNow = age - profile.currentAge;
-        governmentBenefits = profile.socialSecurityBenefit *
-          Math.pow(1 + assumptions.inflationRate, yearsFromNow);
+        governmentBenefits = profile.socialSecurityBenefit * inflationMultiplier;
       }
     }
     const governmentBenefitIncome = governmentBenefits;
@@ -147,8 +148,6 @@ export function calculateWithdrawals(
     // Calculate user-defined income stream benefits
     const streamResult = calculateIncomeStreamBenefits(incomeStreams || [], age);
     // Apply inflation adjustment (stream amounts are in today's dollars)
-    const yearsFromNow = age - profile.currentAge;
-    const inflationMultiplier = Math.pow(1 + assumptions.inflationRate, yearsFromNow);
     const inflatedStreamIncome = streamResult.totalIncome * inflationMultiplier;
     const inflatedStreamByTax = {
       social_security: streamResult.byTaxTreatment.social_security * inflationMultiplier,
