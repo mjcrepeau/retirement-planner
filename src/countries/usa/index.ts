@@ -137,8 +137,6 @@ export const USConfig: CountryConfig = {
     lifeExpectancy: 90,
     filingStatus: 'married_filing_jointly' as const,
     stateTaxRate: 0.05,
-    socialSecurityBenefit: 30000,
-    socialSecurityStartAge: 67,
   }),
 
   getContributionLimits: (): ContributionLimits => ({

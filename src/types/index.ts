@@ -28,6 +28,17 @@ export type FilingStatus = 'single' | 'married_filing_jointly';
 
 export type TaxTreatment = 'pretax' | 'roth' | 'taxable' | 'hsa';
 
+export type IncomeTaxTreatment = 'social_security' | 'fully_taxable' | 'other_income' | 'tax_free';
+
+export interface IncomeStream {
+  id: string;
+  name: string;
+  monthlyAmount: number;      // in today's dollars
+  startAge: number;
+  endAge?: number;            // optional: last age income is received
+  taxTreatment: IncomeTaxTreatment;
+}
+
 export interface AccountWithdrawalRules {
   startAge: number;  // Age when withdrawals can begin
 }
@@ -60,8 +71,8 @@ export interface Profile {
   filingStatus?: FilingStatus; // US only
   stateTaxRate?: number; // US only (as decimal), CA uses province
   annualIncome?: number; // For CA RRSP contribution room calculation
-  socialSecurityBenefit?: number; // CPP for CA, Social Security for US (annual)
-  socialSecurityStartAge?: number; // CPP/SS start age
+  socialSecurityBenefit?: number; // Canada CPP only; US uses income streams (annual)
+  socialSecurityStartAge?: number; // Canada CPP start age; US uses income streams
   secondaryBenefitStartAge?: number; // OAS for CA
   secondaryBenefitAmount?: number; // OAS amount for CA
 }
@@ -93,7 +104,8 @@ export interface YearlyWithdrawal {
   withdrawals: Record<string, number>; // accountId -> withdrawal
   remainingBalances: Record<string, number>; // accountId -> remaining balance
   totalWithdrawal: number;
-  socialSecurityIncome: number;
+  governmentBenefitIncome: number;  // was socialSecurityIncome — Canada CPP/OAS only
+  incomeStreamIncome: number;       // user-defined income streams (SS, pensions, etc.)
   grossIncome: number;
   federalTax: number;
   stateTax: number;
@@ -208,4 +220,17 @@ export function is401k(type: AccountType): boolean {
 
 export function isTraditional(type: string): boolean {
   return type === 'traditional_401k' || type === 'traditional_ira';
+}
+
+export function getIncomeTaxTreatmentLabel(treatment: IncomeTaxTreatment): string {
+  switch (treatment) {
+    case 'social_security':
+      return 'Social Security';
+    case 'fully_taxable':
+      return 'Pension / Annuity';
+    case 'other_income':
+      return 'Other Income';
+    case 'tax_free':
+      return 'Tax-Free';
+  }
 }

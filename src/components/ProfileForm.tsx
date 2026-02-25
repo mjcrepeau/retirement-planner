@@ -129,43 +129,44 @@ export function ProfileForm({ profile, onChange }: ProfileFormProps) {
         )}
       </div>
 
-      <h4 className="text-md font-medium text-gray-800 dark:text-gray-200 mt-6 mb-3">
-        {country === 'CA' ? 'CPP (Canada Pension Plan)' : 'Social Security'}
-      </h4>
+      {country === 'CA' && (
+        <>
+          <h4 className="text-md font-medium text-gray-800 dark:text-gray-200 mt-6 mb-3">
+            CPP (Canada Pension Plan)
+          </h4>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Annual Benefit (today's $)
-            <Tooltip text={country === 'CA'
-              ? "Your estimated annual CPP benefit in today's dollars"
-              : "Your estimated annual Social Security benefit in today's dollars"}
-            />
-          </label>
-          <NumberInput
-            value={profile.socialSecurityBenefit || 0}
-            onChange={(val) => handleChange('socialSecurityBenefit', val)}
-            min={0}
-            placeholder="0"
-            defaultValue={0}
-            className={inputClassName}
-          />
-        </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Annual Benefit (today's $)
+                <Tooltip text="Your estimated annual CPP benefit in today's dollars" />
+              </label>
+              <NumberInput
+                value={profile.socialSecurityBenefit || 0}
+                onChange={(val) => handleChange('socialSecurityBenefit', val)}
+                min={0}
+                placeholder="0"
+                defaultValue={0}
+                className={inputClassName}
+              />
+            </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Start Age
-          </label>
-          <NumberInput
-            value={profile.socialSecurityStartAge || (country === 'CA' ? 65 : 67)}
-            onChange={(val) => handleChange('socialSecurityStartAge', val)}
-            min={country === 'CA' ? 60 : 62}
-            max={70}
-            defaultValue={country === 'CA' ? 65 : 67}
-            className={inputClassName}
-          />
-        </div>
-      </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Start Age
+              </label>
+              <NumberInput
+                value={profile.socialSecurityStartAge || 65}
+                onChange={(val) => handleChange('socialSecurityStartAge', val)}
+                min={60}
+                max={70}
+                defaultValue={65}
+                className={inputClassName}
+              />
+            </div>
+          </div>
+        </>
+      )}
 
       {/* OAS Section - Canada Only */}
       {country === 'CA' && (

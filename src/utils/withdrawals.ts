@@ -8,6 +8,7 @@ import {
   getTaxTreatment,
   isTraditional,
 } from '../types';
+import type { IncomeStream } from '../types';
 import {
   calculateTotalFederalTax,
   calculateStateTax,
@@ -17,6 +18,7 @@ import { getRMDDivisor, RMD_START_AGE } from './constants';
 import type { CountryConfig } from '../countries';
 import { calculatePenalties, type AccountWithdrawal } from './penaltyCalculator';
 import { getDefaultWithdrawalAge } from './withdrawalDefaults';
+import { calculateIncomeStreamBenefits } from './incomeStreams';
 
 interface AccountState {
   id: string;
@@ -78,7 +80,8 @@ export function calculateWithdrawals(
   profile: Profile,
   assumptions: Assumptions,
   accumulationResult: AccumulationResult,
-  countryConfig?: CountryConfig
+  countryConfig?: CountryConfig,
+  incomeStreams?: IncomeStream[]
 ): RetirementResult {
   const retirementYears = profile.lifeExpectancy - profile.retirementAge;
   const currentYear = new Date().getFullYear();
@@ -119,14 +122,17 @@ export function calculateWithdrawals(
       portfolioDepletionAge = age;
     }
 
+    // Common inflation factor for this year
+    const yearsFromNow = age - profile.currentAge;
+    const inflationMultiplier = Math.pow(1 + assumptions.inflationRate, yearsFromNow);
+
     // Calculate government retirement benefits (Social Security, CPP/OAS, etc.)
     let governmentBenefits = 0;
     if (countryConfig) {
       const benefits = countryConfig.calculateRetirementBenefits(profile, age, 0);
       governmentBenefits = benefits.reduce((sum, b) => sum + b.annualAmount, 0);
       // Adjust for inflation
-      const yearsFromNow = age - profile.currentAge;
-      governmentBenefits *= Math.pow(1 + assumptions.inflationRate, yearsFromNow);
+      governmentBenefits *= inflationMultiplier;
     } else {
       // Fallback to US Social Security
       if (
@@ -134,12 +140,23 @@ export function calculateWithdrawals(
         profile.socialSecurityStartAge &&
         age >= profile.socialSecurityStartAge
       ) {
-        const yearsFromNow = age - profile.currentAge;
-        governmentBenefits = profile.socialSecurityBenefit *
-          Math.pow(1 + assumptions.inflationRate, yearsFromNow);
+        governmentBenefits = profile.socialSecurityBenefit * inflationMultiplier;
       }
     }
-    const socialSecurityIncome = governmentBenefits; // Keep variable name for compatibility
+    const governmentBenefitIncome = governmentBenefits;
+
+    // Calculate user-defined income stream benefits
+    const streamResult = calculateIncomeStreamBenefits(incomeStreams || [], age);
+    // Apply inflation adjustment (stream amounts are in today's dollars)
+    const inflatedStreamIncome = streamResult.totalIncome * inflationMultiplier;
+    const inflatedStreamByTax = {
+      social_security: streamResult.byTaxTreatment.social_security * inflationMultiplier,
+      fully_taxable: streamResult.byTaxTreatment.fully_taxable * inflationMultiplier,
+      other_income: streamResult.byTaxTreatment.other_income * inflationMultiplier,
+      tax_free: streamResult.byTaxTreatment.tax_free * inflationMultiplier,
+    };
+
+    const totalRetirementIncome = governmentBenefitIncome + inflatedStreamIncome;
 
     // Calculate minimum required withdrawals (RMD/RRIF) for each traditional account
     // NOTE: Per IRS rules, RMDs are calculated per-account, not on total balance.
@@ -157,17 +174,25 @@ export function calculateWithdrawals(
       });
     const rmdAmount = totalMinimumWithdrawal;
 
+    // Pre-compute non-portfolio taxable income for bracket-filling logic
+    const nonPortfolioTaxableIncome =
+      governmentBenefitIncome * 0.85 +
+      inflatedStreamByTax.social_security * 0.85 +
+      inflatedStreamByTax.fully_taxable +
+      inflatedStreamByTax.other_income;
+
     // Tax-optimized withdrawal strategy
     const withdrawals = performTaxOptimizedWithdrawal(
       accountStates,
       accounts,  // NEW: pass full accounts array
       targetSpending,
       rmdAmount,
-      socialSecurityIncome,
+      totalRetirementIncome,
       profile,
       accountDepletionAges,
       age,
-      countryConfig
+      countryConfig,
+      nonPortfolioTaxableIncome
     );
 
     // Calculate early withdrawal penalties
@@ -182,7 +207,16 @@ export function calculateWithdrawals(
     });
 
     // Calculate taxes using country-specific logic
-    const ordinaryIncome = withdrawals.traditionalWithdrawal + socialSecurityIncome * 0.85; // 85% of SS/CPP taxable
+    // Government benefits (Canada CPP/OAS): 85% taxable
+    const governmentBenefitTaxable = governmentBenefitIncome * 0.85;
+    // Income streams: per-bucket tax rules
+    const ssStreamTaxable = inflatedStreamByTax.social_security * 0.85;
+    const pensionTaxable = inflatedStreamByTax.fully_taxable;
+    const otherIncomeTaxable = inflatedStreamByTax.other_income;
+    // tax_free: excluded from taxable income
+
+    const ordinaryIncome = withdrawals.traditionalWithdrawal +
+      governmentBenefitTaxable + ssStreamTaxable + pensionTaxable + otherIncomeTaxable;
     const capitalGains = withdrawals.taxableGains;
 
     let federalTax: number;
@@ -227,7 +261,7 @@ export function calculateWithdrawals(
     lifetimeTaxesPaid += totalTax;
 
     const grossWithdrawal = withdrawals.total;
-    const grossIncome = grossWithdrawal + socialSecurityIncome;
+    const grossIncome = grossWithdrawal + governmentBenefitIncome + inflatedStreamIncome;
     const afterTaxIncome = grossIncome - totalTax;
 
     // Record the year's data
@@ -242,7 +276,8 @@ export function calculateWithdrawals(
       withdrawals: withdrawals.byAccount,
       remainingBalances,
       totalWithdrawal: grossWithdrawal,
-      socialSecurityIncome,
+      governmentBenefitIncome,
+      incomeStreamIncome: inflatedStreamIncome,
       grossIncome,
       federalTax,
       stateTax,
@@ -296,11 +331,12 @@ function performTaxOptimizedWithdrawal(
   accounts: Account[],  // NEW: need full account objects
   targetSpending: number,
   rmdAmount: number,
-  socialSecurityIncome: number,
+  totalRetirementIncome: number,
   profile: Profile,
   accountDepletionAges: Record<string, number | null>,
   age: number,
-  countryConfig?: CountryConfig
+  countryConfig?: CountryConfig,
+  nonPortfolioTaxableIncome?: number
 ): WithdrawalResult {
   const result: WithdrawalResult = {
     total: 0,
@@ -330,8 +366,8 @@ function performTaxOptimizedWithdrawal(
     }
   };
 
-  // How much do we need after Social Security?
-  let remainingNeed = Math.max(0, targetSpending - socialSecurityIncome);
+  // How much do we need after all retirement income (government benefits + income streams)?
+  let remainingNeed = Math.max(0, targetSpending - totalRetirementIncome);
 
   // Filter to only available accounts
   const availableAccounts = getAvailableAccounts(
@@ -380,7 +416,8 @@ function performTaxOptimizedWithdrawal(
   const standardDeduction = getStandardDeduction(filingStatus);
   const bracket12Max = filingStatus === 'married_filing_jointly' ? 94300 : 47150;
   const targetOrdinaryIncome = standardDeduction + bracket12Max;
-  const currentOrdinaryIncome = result.traditionalWithdrawal + socialSecurityIncome * 0.85;
+  const currentOrdinaryIncome = result.traditionalWithdrawal +
+    (nonPortfolioTaxableIncome || 0);
   const roomIn12Bracket = Math.max(0, targetOrdinaryIncome - currentOrdinaryIncome);
 
   // Withdraw additional from traditional if we have room and need the money
