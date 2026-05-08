@@ -28,6 +28,13 @@ export const TAX_BRACKETS_SINGLE: TaxBracket[] = [
 export const STANDARD_DEDUCTION_MFJ = 29200;
 export const STANDARD_DEDUCTION_SINGLE = 14600;
 
+// Empirical observation: US federal tax bracket boundaries and the standard
+// deduction have historically grown at roughly 50% of CPI inflation over the
+// last 60 years (with a 1-2 year lag). Used to inflate bracket boundaries and
+// the standard deduction in retirement-year and pre-retirement-year US tax
+// calculations so the model doesn't suffer from naive bracket creep.
+export const FEDERAL_BRACKET_INFLATION_RATIO = 0.5;
+
 // Long-term capital gains rates (2024)
 export const CAPITAL_GAINS_BRACKETS_MFJ: TaxBracket[] = [
   { min: 0, max: 94050, rate: 0 },

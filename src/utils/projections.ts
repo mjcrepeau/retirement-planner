@@ -12,6 +12,7 @@ import {
   applyConversionsForYear,
   calculateConversionTaxDelta,
 } from './conversions';
+import { FEDERAL_BRACKET_INFLATION_RATIO } from './constants';
 
 /**
  * Calculate employer match for accounts that support it (401k, employer RRSP)
@@ -114,11 +115,18 @@ export function calculateAccumulation(
       // Project nominal income for this year
       const incomeForYear = (profile.annualIncome ?? 0) *
         Math.pow(1 + (profile.incomeGrowthRate ?? 0), yearsFromNow);
+      // US federal brackets are partially inflation-indexed (50% of CPI/year).
+      // Same model as the retirement-side tax calc, anchored at currentAge.
+      const bracketInflationMultiplier = Math.pow(
+        1 + FEDERAL_BRACKET_INFLATION_RATIO * inflationRate,
+        yearsFromNow,
+      );
       const taxDelta = calculateConversionTaxDelta({
         incomeForYear,
         conversionTotalForYear: totalConvertedThisYear,
         filingStatus: profile.filingStatus ?? 'single',
         stateTaxRate: profile.stateTaxRate ?? 0,
+        bracketInflationMultiplier,
       });
       conversionsByYear.push({ age, year, amount: totalConvertedThisYear, taxDelta });
       lifetimeConversionTaxCost += taxDelta;

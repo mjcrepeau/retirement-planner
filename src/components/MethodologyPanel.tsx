@@ -449,6 +449,19 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
             : `Standard deduction of ${formatCurrency(standardDeduction)} is subtracted before applying brackets.`
           }
         </p>
+        {!isCanada && (
+          <p className="mt-3 text-sm text-gray-600 dark:text-gray-400">
+            <strong className="text-gray-800 dark:text-gray-200">Partial bracket indexing.</strong> Historically,
+            US federal tax bracket boundaries and the standard deduction have grown at roughly
+            <em> 50% of CPI inflation</em> over the last 60 years (with a 1–2 year lag). The calculator
+            applies this empirical pattern: in any retirement or pre-retirement year, the bracket
+            boundaries, standard deduction, and long-term capital-gains thresholds are scaled by
+            <code> (1 + 0.5 × inflationRate)<sup>yearsFromNow</sup></code>. The 12% bracket-fill ceiling in the
+            withdrawal strategy tracks the same scaling so "fill to top of 12% bracket" stays accurate.
+            With inflationRate = 0 the multiplier is 1.0 and tax math reverts to fixed 2024 brackets.
+            Canadian brackets and BPA are not indexed.
+          </p>
+        )}
       </section>
 
       {/* Provincial Tax Brackets (Canada only) */}
@@ -555,6 +568,17 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
               (reduced future RMDs, tax-free Roth growth) that a per-year cost alone misses.
             </p>
             <p>
+              <strong>The "Net Conversion Benefit" insight.</strong> The lifetime tax delta alone doesn't tell
+              the full story — conversions also shift terminal portfolio balance and lifetime after-tax
+              spending power. The net-benefit card combines all three flows from the same shadow simulation:
+              <code> (ΔFinal Balance) + (ΔLifetime After-Tax Income) − (Pre-Retirement Conversion Tax)</code>.
+              A positive number means converting was net-positive across the full life cycle. The breakdown
+              is shown when you expand the card. Caveat: the engine does not gross up retirement-year
+              withdrawals to cover the higher conversion-year taxes, so if a real-life user would pull more
+              from accounts to maintain their target after-tax spending, the metric overstates the benefit
+              (the extra withdrawals would shrink ΔFinal Balance further).
+            </p>
+            <p>
               <strong>Withdrawal-bracket-fill interaction.</strong> The existing "fill the 12% bracket with
               traditional withdrawals" strategy is unchanged and ignores conversions; your explicit conversion
               plan is treated as the priority signal for tax planning that year.
@@ -565,7 +589,7 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
             <ul className="list-disc list-inside space-y-1">
               <li>Conversions are transfers and do not trigger the 10% early-withdrawal penalty (matches IRS rules).</li>
               <li>The 5-year rule on converted Roth amounts is not tracked.</li>
-              <li>Tax brackets are static 2024.</li>
+              <li>Tax brackets start at 2024 values, then grow at 50% of the inflation rate per year (see Federal Tax Brackets section above for details).</li>
               <li>Pre-retirement income is assumed to grow at your specified rate; bonuses, job changes, and
                   other ordinary-income variability are not modeled.</li>
             </ul>

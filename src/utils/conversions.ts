@@ -10,6 +10,12 @@ export interface ConversionTaxDeltaInput {
   conversionTotalForYear: number; // nominal sum of all active conversions
   filingStatus: FilingStatus;
   stateTaxRate: number;
+  // Optional bracket-indexing factor for the year being evaluated.
+  // (1 + FEDERAL_BRACKET_INFLATION_RATIO × inflation)^yearsFromNow. Applied via
+  // deflate-compute-scale on the federal tax functions (mathematically equivalent
+  // to scaling all bracket boundaries by this factor) plus scaling the std
+  // deduction in the state-tax base. Defaults to 1 (no indexing).
+  bracketInflationMultiplier?: number;
 }
 
 /**
@@ -21,11 +27,16 @@ export function calculateConversionTaxDelta(input: ConversionTaxDeltaInput): num
   if (input.conversionTotalForYear <= 0) return 0;
 
   const { incomeForYear, conversionTotalForYear, filingStatus, stateTaxRate } = input;
-  const stdDed = getStandardDeduction(filingStatus);
+  const m = input.bracketInflationMultiplier ?? 1;
+  const stdDed = getStandardDeduction(filingStatus) * m;
 
-  const fedWithout = calculateTotalFederalTax(incomeForYear, 0, filingStatus);
-  const fedWith = calculateTotalFederalTax(incomeForYear + conversionTotalForYear, 0, filingStatus);
+  // Deflate income to today's-bracket scale, compute, scale tax back up.
+  const fedWithout = calculateTotalFederalTax(incomeForYear / m, 0, filingStatus) * m;
+  const fedWith = calculateTotalFederalTax(
+    (incomeForYear + conversionTotalForYear) / m, 0, filingStatus,
+  ) * m;
 
+  // State tax is flat-rate in this model; the std-ded floor scales with brackets.
   const stateWithout = calculateStateTax(Math.max(0, incomeForYear - stdDed), stateTaxRate);
   const stateWith = calculateStateTax(
     Math.max(0, incomeForYear + conversionTotalForYear - stdDed),

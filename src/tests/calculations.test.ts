@@ -2759,6 +2759,198 @@ function testBracketFillAdjustment(): void {
 }
 
 // =============================================================================
+// FEDERAL BRACKET INDEXING TESTS
+// =============================================================================
+
+function testFederalBracketIndexing(): void {
+  section('FEDERAL BRACKET INDEXING (US-only, 50% of CPI/year)');
+
+  const traditional: Account = {
+    id: 'trad',
+    name: 'Traditional 401k',
+    type: 'traditional_401k',
+    balance: 2_000_000,
+    annualContribution: 0,
+    contributionGrowthRate: 0,
+    returnRate: 0,
+  };
+  const profileSingle: Profile = {
+    country: 'US',
+    currentAge: 65,
+    retirementAge: 65,
+    lifeExpectancy: 70,
+    region: 'TX',
+    filingStatus: 'single',
+    stateTaxRate: 0,
+  };
+
+  console.log('\n--- Parity: inflationRate=0 → multiplier=1 → matches direct tax fn ---');
+
+  const zeroInflationAssumptions: Assumptions = {
+    inflationRate: 0,
+    safeWithdrawalRate: 0.05,
+    retirementReturnRate: 0,
+  };
+  const accumZero = calculateAccumulation([traditional], profileSingle, usConfig);
+  const resultZero = calculateWithdrawals(
+    [traditional], profileSingle, zeroInflationAssumptions, accumZero, usConfig,
+  );
+  const y65Zero = resultZero.yearlyWithdrawals.find(y => y.age === 65);
+  assert(y65Zero !== undefined, 'inflation=0 run produced age-65 record');
+  if (y65Zero) {
+    const expectedFed = calculateTotalFederalTax(y65Zero.taxableOrdinaryIncome, 0, 'single');
+    assertApprox(
+      y65Zero.federalTax, expectedFed, 0.5,
+      'inflation=0: federalTax matches calculateTotalFederalTax exactly'
+    );
+  }
+
+  console.log('\n--- Year 0 (age == currentAge) with 3% inflation → multiplier=1 ---');
+
+  const inflationAssumptions: Assumptions = {
+    inflationRate: 0.03,
+    safeWithdrawalRate: 0.05,
+    retirementReturnRate: 0,
+  };
+  const accumInfl = calculateAccumulation([traditional], profileSingle, usConfig);
+  const resultInfl = calculateWithdrawals(
+    [traditional], profileSingle, inflationAssumptions, accumInfl, usConfig,
+  );
+  const y65Infl = resultInfl.yearlyWithdrawals.find(y => y.age === 65);
+  assert(y65Infl !== undefined, 'inflation=0.03 run produced age-65 record');
+  if (y65Infl) {
+    const expectedFed = calculateTotalFederalTax(y65Infl.taxableOrdinaryIncome, 0, 'single');
+    assertApprox(
+      y65Infl.federalTax, expectedFed, 0.5,
+      'year 0: yearsFromNow=0 → multiplier=1 → fed tax = direct call regardless of inflationRate'
+    );
+  }
+
+  console.log('\n--- Year 20 with 3% inflation → multiplier ≈ 1.347, fed tax = scale × tax(deflated) ---');
+
+  // currentAge=50, retirementAge=70 → age 70 is the FIRST retirement year (full
+  // $2M balance available). yearsFromNow = 20 → bracket multiplier ≈ 1.347.
+  const profileLong: Profile = {
+    country: 'US',
+    currentAge: 50,
+    retirementAge: 70,
+    lifeExpectancy: 75,
+    region: 'TX',
+    filingStatus: 'single',
+    stateTaxRate: 0,
+  };
+  const accumLong = calculateAccumulation([traditional], profileLong, usConfig);
+  const resultLong = calculateWithdrawals(
+    [traditional], profileLong, inflationAssumptions, accumLong, usConfig,
+  );
+  const y70 = resultLong.yearlyWithdrawals.find(y => y.age === 70);
+  assert(y70 !== undefined, 'long-horizon run produced age-70 record');
+  if (y70) {
+    assert(y70.taxableOrdinaryIncome > 0, `age 70 has nonzero taxable income (got ${y70.taxableOrdinaryIncome})`);
+    // yearsFromNow = 70 - 50 = 20; bracket multiplier = (1 + 0.5*0.03)^20 = 1.015^20
+    const m = Math.pow(1.015, 20);
+    const expectedFed = calculateTotalFederalTax(
+      y70.taxableOrdinaryIncome / m, 0, 'single',
+    ) * m;
+    assertApprox(
+      y70.federalTax, expectedFed, 5.0,
+      `year 20 with 3% inflation: fed tax = ${m.toFixed(4)} × tax(income / ${m.toFixed(4)})`
+    );
+
+    // Sanity: indexed tax should be strictly less than the unindexed tax for the
+    // same nominal income (the brackets have stretched, lower marginal rate hits).
+    const unindexedFed = calculateTotalFederalTax(
+      y70.taxableOrdinaryIncome, 0, 'single',
+    );
+    assert(
+      y70.federalTax < unindexedFed,
+      `Indexed federal tax (${y70.federalTax.toFixed(0)}) should be < unindexed (${unindexedFed.toFixed(0)})`
+    );
+  }
+
+  console.log('\n--- Bracket-fill ceiling tracks the multiplier ---');
+
+  // Big enough Roth balance to absorb spending-above-ceiling for 8+ years
+  // without depleting (otherwise step 6 fallback fires and trad withdrawal
+  // exceeds the ceiling).
+  const trad: Account = {
+    id: 'trad', name: 'T', type: 'traditional_401k',
+    balance: 2_000_000, annualContribution: 0, contributionGrowthRate: 0, returnRate: 0,
+  };
+  const roth: Account = {
+    id: 'roth', name: 'R', type: 'roth_ira',
+    balance: 2_000_000, annualContribution: 0, contributionGrowthRate: 0, returnRate: 0,
+  };
+  const profileBF: Profile = {
+    country: 'US',
+    currentAge: 60,
+    retirementAge: 60,
+    lifeExpectancy: 70,
+    region: 'TX',
+    filingStatus: 'single',
+    stateTaxRate: 0,
+  };
+  const bfAssumptions: Assumptions = {
+    inflationRate: 0.03,
+    safeWithdrawalRate: 0.05,        // moderate; spending exceeds ceiling but Roth covers the gap
+    retirementReturnRate: 0,
+  };
+  const accumBF = calculateAccumulation([trad, roth], profileBF, usConfig);
+  const resultBF = calculateWithdrawals(
+    [trad, roth], profileBF, bfAssumptions, accumBF, usConfig,
+  );
+  const y68 = resultBF.yearlyWithdrawals.find(y => y.age === 68);
+  assert(y68 !== undefined, 'bracket-fill run produced age-68 record (pre-RMD)');
+  if (y68) {
+    // age 68, currentAge 60 → yearsFromNow = 8; multiplier = (1.015)^8
+    const m = Math.pow(1.015, 8);
+    const indexedCeiling = (14600 + 47150) * m;
+    assertApprox(
+      y68.withdrawals['trad'], indexedCeiling, 5.0,
+      `Year 8: bracket-fill ceiling = ($14,600 + $47,150) × ${m.toFixed(4)} = $${indexedCeiling.toFixed(0)}`
+    );
+  }
+
+  console.log('\n--- Canada: bracket indexing does NOT apply ---');
+
+  // Mirror the US year-20 setup so age 70 is the first retirement year with
+  // the full balance, guaranteeing a nontrivial Canadian tax computation.
+  const rrsp: Account = {
+    id: 'rrsp', name: 'RRSP', type: 'rrsp',
+    balance: 2_000_000, annualContribution: 0, contributionGrowthRate: 0, returnRate: 0,
+  };
+  const profileCA: Profile = {
+    country: 'CA',
+    currentAge: 50,
+    retirementAge: 70,
+    lifeExpectancy: 75,
+    region: 'ON',
+    stateTaxRate: 0,
+  };
+  const accumCA = calculateAccumulation([rrsp], profileCA, caConfig);
+  const resultCA = calculateWithdrawals(
+    [rrsp], profileCA, inflationAssumptions, accumCA, caConfig,
+  );
+  const yCA70 = resultCA.yearlyWithdrawals.find(y => y.age === 70);
+  assert(yCA70 !== undefined, 'Canadian run produced age-70 record');
+  if (yCA70) {
+    assert(
+      yCA70.taxableOrdinaryIncome > 0,
+      `Canadian age-70 record has nonzero taxable income (got ${yCA70.taxableOrdinaryIncome})`,
+    );
+    // For Canada, multiplier = 1 always. Engine federalTax should equal the
+    // direct caConfig call on nominal ordinary income (no cap gains in this scenario).
+    const expectedFedCA = caConfig.calculateFederalTax(
+      yCA70.taxableOrdinaryIncome, undefined,
+    );
+    assertApprox(
+      yCA70.federalTax, expectedFedCA, 5.0,
+      'Canada: federalTax matches direct caConfig.calculateFederalTax (no indexing)'
+    );
+  }
+}
+
+// =============================================================================
 // RUN ALL TESTS
 // =============================================================================
 
@@ -2795,6 +2987,7 @@ function runAllTests(): void {
   testSwrBucketsValidate();
   testSwrBucketsWithdrawals();
   testBracketFillAdjustment();
+  testFederalBracketIndexing();
 
   console.log('\n' + '='.repeat(60));
   console.log('TEST SUMMARY');

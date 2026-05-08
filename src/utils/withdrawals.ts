@@ -16,7 +16,7 @@ import {
   getStandardDeduction,
 } from './taxes';
 import { applyConversionsForYear } from './conversions';
-import { getRMDDivisor, RMD_START_AGE } from './constants';
+import { getRMDDivisor, RMD_START_AGE, FEDERAL_BRACKET_INFLATION_RATIO } from './constants';
 import type { CountryConfig } from '../countries';
 import { calculatePenalties, type AccountWithdrawal } from './penaltyCalculator';
 import { getDefaultWithdrawalAge } from './withdrawalDefaults';
@@ -252,42 +252,67 @@ export function calculateWithdrawals(
       conversionAmount;
     const capitalGains = withdrawals.taxableGains;
 
+    // US federal brackets and standard deduction are partially inflation-indexed
+    // in the model (50% of CPI/year, applied per FEDERAL_BRACKET_INFLATION_RATIO).
+    // We use a deflate-compute-scale transformation: divide nominal income by
+    // the multiplier to put it on today's-bracket scale, evaluate tax with the
+    // existing tax engine, then scale the resulting tax up by the multiplier.
+    // This is mathematically equivalent to scaling all bracket boundaries (and
+    // the std deduction inside calculateCapitalGainsTax) by the multiplier,
+    // without modifying the tax engine itself. Canada is unaffected.
+    const isUS = countryConfig?.code === 'US' || !countryConfig;
+    const bracketInflationMultiplier = isUS
+      ? Math.pow(1 + FEDERAL_BRACKET_INFLATION_RATIO * assumptions.inflationRate, yearsFromNow)
+      : 1;
+    const stdDed = getStandardDeduction(profile.filingStatus || 'single');
+    const indexedStdDed = stdDed * bracketInflationMultiplier;
+
     let federalTax: number;
     let stateTax: number;
 
     if (countryConfig) {
-      // Use country-specific tax calculations
-      federalTax = countryConfig.calculateFederalTax(ordinaryIncome, profile.filingStatus);
-      // Add capital gains tax (country handles inclusion rates)
-      federalTax += countryConfig.calculateCapitalGainsTax(
-        capitalGains,
-        ordinaryIncome,
-        profile.region || '',
-        profile.filingStatus
-      );
-      // Calculate regional (state/provincial) tax
-      stateTax = countryConfig.calculateRegionalTax(
-        ordinaryIncome + capitalGains,
-        profile.region || ''
-      );
-      // For US, regional tax is still calculated using flat rate from profile
-      // (the US config returns 0 from calculateRegionalTax)
       if (countryConfig.code === 'US') {
+        // Deflate, compute, scale back up
+        const deflatedOrdinary = ordinaryIncome / bracketInflationMultiplier;
+        const deflatedGains = capitalGains / bracketInflationMultiplier;
+        federalTax = countryConfig.calculateFederalTax(deflatedOrdinary, profile.filingStatus)
+          * bracketInflationMultiplier;
+        federalTax += countryConfig.calculateCapitalGainsTax(
+          deflatedGains,
+          deflatedOrdinary,
+          profile.region || '',
+          profile.filingStatus,
+        ) * bracketInflationMultiplier;
         stateTax = calculateStateTax(
-          ordinaryIncome + capitalGains - getStandardDeduction(profile.filingStatus || 'single'),
-          profile.stateTaxRate || 0
+          ordinaryIncome + capitalGains - indexedStdDed,
+          profile.stateTaxRate || 0,
+        );
+      } else {
+        // Canada — no bracket indexing; use country-config functions as-is.
+        federalTax = countryConfig.calculateFederalTax(ordinaryIncome, profile.filingStatus);
+        federalTax += countryConfig.calculateCapitalGainsTax(
+          capitalGains,
+          ordinaryIncome,
+          profile.region || '',
+          profile.filingStatus,
+        );
+        stateTax = countryConfig.calculateRegionalTax(
+          ordinaryIncome + capitalGains,
+          profile.region || '',
         );
       }
     } else {
-      // Fallback to US logic
+      // Fallback to US logic — apply bracket indexing
+      const deflatedOrdinary = ordinaryIncome / bracketInflationMultiplier;
+      const deflatedGains = capitalGains / bracketInflationMultiplier;
       federalTax = calculateTotalFederalTax(
-        ordinaryIncome,
-        capitalGains,
-        profile.filingStatus || 'single'
-      );
+        deflatedOrdinary,
+        deflatedGains,
+        profile.filingStatus || 'single',
+      ) * bracketInflationMultiplier;
       stateTax = calculateStateTax(
-        ordinaryIncome + capitalGains - getStandardDeduction(profile.filingStatus || 'single'),
-        profile.stateTaxRate || 0
+        ordinaryIncome + capitalGains - indexedStdDed,
+        profile.stateTaxRate || 0,
       );
     }
     const totalTax = federalTax + stateTax + totalPenalties;
@@ -451,14 +476,21 @@ function performTaxOptimizedWithdrawal(
   // (Standard deduction + 12% bracket gives good tax efficiency).
   // The optional bracketFillAdjustment dial (US-only) resizes the 12% portion
   // of the ceiling — positive pulls more from Traditional, negative pulls less.
+  // The ceiling also tracks the partial bracket indexing applied to US tax
+  // calc (FEDERAL_BRACKET_INFLATION_RATIO × inflation per year), so the
+  // "fill to top of 12% bracket" target stays in sync with the bracket math
+  // used to compute taxes that year.
   const filingStatus = profile.filingStatus || 'single';
   const standardDeduction = getStandardDeduction(filingStatus);
   const bracket12Max = filingStatus === 'married_filing_jointly' ? 94300 : 47150;
-  const adjustment = countryConfig?.code === 'US'
-    ? (assumptions.bracketFillAdjustment ?? 0)
-    : 0;
+  const isUS = countryConfig?.code === 'US' || !countryConfig;
+  const adjustment = isUS ? (assumptions.bracketFillAdjustment ?? 0) : 0;
+  const yearsFromCurrentAge = age - profile.currentAge;
+  const bracketInflationMultiplier = isUS
+    ? Math.pow(1 + FEDERAL_BRACKET_INFLATION_RATIO * assumptions.inflationRate, yearsFromCurrentAge)
+    : 1;
   const adjustedBracket12 = bracket12Max * (1 + adjustment);
-  const targetOrdinaryIncome = standardDeduction + adjustedBracket12;
+  const targetOrdinaryIncome = (standardDeduction + adjustedBracket12) * bracketInflationMultiplier;
   const currentOrdinaryIncome = result.traditionalWithdrawal +
     (nonPortfolioTaxableIncome || 0);
   const roomIn12Bracket = Math.max(0, targetOrdinaryIncome - currentOrdinaryIncome);
