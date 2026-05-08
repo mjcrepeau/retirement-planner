@@ -152,7 +152,7 @@ export function DataTableWithdrawal({ accounts, result, incomeStreams = [] }: Da
                 <thead>
                   <tr className="border-b border-gray-200 dark:border-gray-700">
                     <th className="text-left py-2 px-2 font-medium text-gray-700 dark:text-gray-300 sticky left-0 bg-white dark:bg-gray-800">Age</th>
-                    <th className="text-right py-2 px-2 font-medium text-gray-700 dark:text-gray-300">Target Spending</th>
+                    <th className="text-right py-2 px-2 font-medium text-gray-700 dark:text-gray-300">Target (today's $)</th>
                     <th className="text-right py-2 px-2 font-medium text-gray-700 dark:text-gray-300">Withdrawals</th>
                     <th className="text-right py-2 px-2 font-medium" style={{ color: CHART_COLORS.retirementIncome }}>Retirement Income</th>
                     <th className="text-right py-2 px-2 font-medium text-gray-700 dark:text-gray-300">Gross Income</th>
@@ -165,7 +165,7 @@ export function DataTableWithdrawal({ accounts, result, incomeStreams = [] }: Da
                   {result.yearlyWithdrawals.map((yearData) => (
                     <tr key={yearData.age} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50">
                       <td className="py-2 px-2 font-medium text-gray-900 dark:text-white sticky left-0 bg-white dark:bg-gray-800">{yearData.age}</td>
-                      <td className="py-2 px-2 text-right font-mono text-gray-600 dark:text-gray-400">{formatCurrency(yearData.targetSpending)}</td>
+                      <td className="py-2 px-2 text-right font-mono text-gray-600 dark:text-gray-400">{formatCurrency(yearData.targetSpendingTodayDollars)}</td>
                       <td className="py-2 px-2 text-right font-mono text-gray-900 dark:text-white">{formatCurrency(yearData.totalWithdrawal)}</td>
                       <td className="py-2 px-2 text-right font-mono" style={{ color: CHART_COLORS.retirementIncome }}>
                         {(yearData.governmentBenefitIncome + yearData.incomeStreamIncome) > 0 ? formatCurrency(yearData.governmentBenefitIncome + yearData.incomeStreamIncome) : '-'}

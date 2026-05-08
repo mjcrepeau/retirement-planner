@@ -343,6 +343,7 @@ export function calculateWithdrawals(
       totalTax,
       afterTaxIncome,
       targetSpending,
+      targetSpendingTodayDollars: targetSpending / inflationMultiplier,
       rmdAmount,
       totalRemainingBalance: accountStates.reduce((sum, acc) => sum + acc.balance, 0),
       earlyWithdrawalPenalties: penalties,

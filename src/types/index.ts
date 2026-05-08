@@ -145,6 +145,9 @@ export interface YearlyWithdrawal {
   totalTax: number;
   afterTaxIncome: number;
   targetSpending: number;
+  // targetSpending deflated to currentAge dollars: targetSpending / (1+inflation)^yearsFromNow.
+  // Lets the user evaluate "is $X enough?" without doing the inflation math in their head.
+  targetSpendingTodayDollars: number;
   rmdAmount: number;
   totalRemainingBalance: number;
   earlyWithdrawalPenalties: EarlyWithdrawalPenalty[];
