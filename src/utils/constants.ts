@@ -1,5 +1,5 @@
 import { TaxBracket, RMDEntry } from '../types';
-import type { IncomeStream } from '../types';
+import type { IncomeStream, ConversionPlan, SwrBucket } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 
 // 2024 Federal Tax Brackets - Married Filing Jointly
@@ -129,12 +129,16 @@ export const DEFAULT_PROFILE = {
   region: 'CA', // California
   filingStatus: 'married_filing_jointly' as const,
   stateTaxRate: 0.05,
+  annualIncome: 100000,
+  incomeGrowthRate: 0.03,
 };
 
 export const DEFAULT_ASSUMPTIONS = {
   inflationRate: 0.03,
   safeWithdrawalRate: 0.04,
   retirementReturnRate: 0.05,
+  swrBuckets: [] as SwrBucket[],
+  bracketFillAdjustment: 0,
 };
 
 export const DEFAULT_INCOME_STREAMS: IncomeStream[] = [
@@ -146,3 +150,5 @@ export const DEFAULT_INCOME_STREAMS: IncomeStream[] = [
     taxTreatment: 'social_security',
   },
 ];
+
+export const DEFAULT_CONVERSION_PLANS: ConversionPlan[] = [];

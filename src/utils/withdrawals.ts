@@ -5,6 +5,7 @@ import {
   AccumulationResult,
   RetirementResult,
   YearlyWithdrawal,
+  ConversionPlan,
   getTaxTreatment,
   isTraditional,
 } from '../types';
@@ -14,11 +15,13 @@ import {
   calculateStateTax,
   getStandardDeduction,
 } from './taxes';
+import { applyConversionsForYear } from './conversions';
 import { getRMDDivisor, RMD_START_AGE } from './constants';
 import type { CountryConfig } from '../countries';
 import { calculatePenalties, type AccountWithdrawal } from './penaltyCalculator';
 import { getDefaultWithdrawalAge } from './withdrawalDefaults';
 import { calculateIncomeStreamBenefits } from './incomeStreams';
+import { rateForAge } from './swrBuckets';
 
 interface AccountState {
   id: string;
@@ -81,7 +84,8 @@ export function calculateWithdrawals(
   assumptions: Assumptions,
   accumulationResult: AccumulationResult,
   countryConfig?: CountryConfig,
-  incomeStreams?: IncomeStream[]
+  incomeStreams?: IncomeStream[],
+  conversionPlans: ConversionPlan[] = [],
 ): RetirementResult {
   const retirementYears = profile.lifeExpectancy - profile.retirementAge;
   const currentYear = new Date().getFullYear();
@@ -99,9 +103,9 @@ export function calculateWithdrawals(
       : 0,
   }));
 
-  // Calculate initial target spending based on safe withdrawal rate
+  // Total portfolio at retirement — used as the base for targetSpending
+  // each year (with the rate possibly varying by bucket).
   const totalPortfolio = accumulationResult.totalAtRetirement;
-  let targetSpending = totalPortfolio * assumptions.safeWithdrawalRate;
 
   const yearlyWithdrawals: YearlyWithdrawal[] = [];
   let lifetimeTaxesPaid = 0;
@@ -115,6 +119,20 @@ export function calculateWithdrawals(
   for (let i = 0; i <= retirementYears; i++) {
     const age = profile.retirementAge + i;
     const year = retirementStartYear + i;
+
+    // Determine this year's targetSpending. Buckets override the global SWR
+    // for matching age ranges; uncovered ages fall back to safeWithdrawalRate.
+    const yearsFromRetirementForSpending = age - profile.retirementAge;
+    const inflationFactorForSpending = Math.pow(
+      1 + assumptions.inflationRate,
+      yearsFromRetirementForSpending,
+    );
+    const swrRate = rateForAge(
+      age,
+      assumptions.swrBuckets ?? [],
+      assumptions.safeWithdrawalRate,
+    );
+    const targetSpending = totalPortfolio * swrRate * inflationFactorForSpending;
 
     // Check if portfolio is depleted
     const totalRemaining = accountStates.reduce((sum, acc) => sum + acc.balance, 0);
@@ -189,6 +207,7 @@ export function calculateWithdrawals(
       rmdAmount,
       totalRetirementIncome,
       profile,
+      assumptions,
       accountDepletionAges,
       age,
       countryConfig,
@@ -206,6 +225,19 @@ export function calculateWithdrawals(
       acc.balance *= (1 + assumptions.retirementReturnRate);
     });
 
+    // End-of-year Roth conversions (US-only feature; harmless no-op if plans is empty)
+    const balancesById: Record<string, number> = {};
+    accountStates.forEach(acc => { balancesById[acc.id] = acc.balance; });
+    const { totalConvertedThisYear } = applyConversionsForYear({
+      age,
+      yearsFromNow: age - profile.currentAge,
+      plans: conversionPlans,
+      balances: balancesById,
+      inflationRate: assumptions.inflationRate,
+    });
+    accountStates.forEach(acc => { acc.balance = balancesById[acc.id]; });
+    const conversionAmount = totalConvertedThisYear;
+
     // Calculate taxes using country-specific logic
     // Government benefits (Canada CPP/OAS): 85% taxable
     const governmentBenefitTaxable = governmentBenefitIncome * 0.85;
@@ -216,7 +248,8 @@ export function calculateWithdrawals(
     // tax_free: excluded from taxable income
 
     const ordinaryIncome = withdrawals.traditionalWithdrawal +
-      governmentBenefitTaxable + ssStreamTaxable + pensionTaxable + otherIncomeTaxable;
+      governmentBenefitTaxable + ssStreamTaxable + pensionTaxable + otherIncomeTaxable +
+      conversionAmount;
     const capitalGains = withdrawals.taxableGains;
 
     let federalTax: number;
@@ -288,10 +321,9 @@ export function calculateWithdrawals(
       totalRemainingBalance: accountStates.reduce((sum, acc) => sum + acc.balance, 0),
       earlyWithdrawalPenalties: penalties,
       totalPenalties,
+      conversionAmount,
     });
 
-    // Inflate target spending for next year
-    targetSpending *= (1 + assumptions.inflationRate);
   }
 
   // Calculate sustainable withdrawal amounts in today's dollars
@@ -305,6 +337,7 @@ export function calculateWithdrawals(
     sustainableMonthlyWithdrawal,
     sustainableAnnualWithdrawal,
     accountDepletionAges,
+    lifetimeTaxDeltaFromConversion: 0,
   };
 }
 
@@ -333,6 +366,7 @@ function performTaxOptimizedWithdrawal(
   rmdAmount: number,
   totalRetirementIncome: number,
   profile: Profile,
+  assumptions: Assumptions,
   accountDepletionAges: Record<string, number | null>,
   age: number,
   countryConfig?: CountryConfig,
@@ -411,11 +445,17 @@ function performTaxOptimizedWithdrawal(
   }
 
   // Step 2: Fill up to 12% bracket with additional traditional withdrawals
-  // (Standard deduction + 12% bracket gives good tax efficiency)
+  // (Standard deduction + 12% bracket gives good tax efficiency).
+  // The optional bracketFillAdjustment dial (US-only) resizes the 12% portion
+  // of the ceiling — positive pulls more from Traditional, negative pulls less.
   const filingStatus = profile.filingStatus || 'single';
   const standardDeduction = getStandardDeduction(filingStatus);
   const bracket12Max = filingStatus === 'married_filing_jointly' ? 94300 : 47150;
-  const targetOrdinaryIncome = standardDeduction + bracket12Max;
+  const adjustment = countryConfig?.code === 'US'
+    ? (assumptions.bracketFillAdjustment ?? 0)
+    : 0;
+  const adjustedBracket12 = bracket12Max * (1 + adjustment);
+  const targetOrdinaryIncome = standardDeduction + adjustedBracket12;
   const currentOrdinaryIncome = result.traditionalWithdrawal +
     (nonPortfolioTaxableIncome || 0);
   const roomIn12Bracket = Math.max(0, targetOrdinaryIncome - currentOrdinaryIncome);

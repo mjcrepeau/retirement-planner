@@ -90,6 +90,9 @@ The withdrawal algorithm follows a tax-efficient strategy:
 ![Graph showing retirement taxe burden year by year](screenshots/taxes.png "Tax burden graph")
 ![Table showing yearly income and spending calculations](screenshots/yearly.png "Yearly income table")
 
+![Table showing Economic Assumptions options](screenshots/withdrawl_bucket_fill.png "Economic Assumptions options")
+![Table showing ROTH conversion options](screenshots/roth_conversions.png "Roth Conversion options")
+
 
 ### Calculation Transparency
 Full visibility into how every number is calculated:

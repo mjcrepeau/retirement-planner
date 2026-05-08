@@ -39,6 +39,23 @@ export interface IncomeStream {
   taxTreatment: IncomeTaxTreatment;
 }
 
+export interface ConversionPlan {
+  id: string;
+  name: string;
+  sourceAccountId: string;      // must reference a 'pretax' account
+  destinationAccountId: string; // must reference a 'roth' account
+  startAge: number;             // inclusive
+  endAge: number;               // inclusive; required (unlike IncomeStream.endAge which is optional)
+  yearlyAmount: number;         // today's dollars; inflated yearly
+}
+
+export interface ConversionYearRecord {
+  age: number;
+  year: number;
+  amount: number;     // nominal converted dollars that year
+  taxDelta: number;   // extra federal+state tax that year (always ≥ 0)
+}
+
 export interface AccountWithdrawalRules {
   startAge: number;  // Age when withdrawals can begin
 }
@@ -70,17 +87,27 @@ export interface Profile {
   region: string; // State code (US) or Province code (CA)
   filingStatus?: FilingStatus; // US only
   stateTaxRate?: number; // US only (as decimal), CA uses province
-  annualIncome?: number; // For CA RRSP contribution room calculation
+  annualIncome?: number; // Current ordinary income in today's dollars (US: conversion tax modeling; CA: RRSP contribution room)
+  incomeGrowthRate?: number; // Annual growth rate for projected pre-retirement income (decimal, e.g. 0.03)
   socialSecurityBenefit?: number; // Canada CPP only; US uses income streams (annual)
   socialSecurityStartAge?: number; // Canada CPP start age; US uses income streams
   secondaryBenefitStartAge?: number; // OAS for CA
   secondaryBenefitAmount?: number; // OAS amount for CA
 }
 
+export interface SwrBucket {
+  id: string;
+  startAge: number;       // inclusive
+  endAge: number;         // inclusive
+  rate: number;           // decimal, e.g. 0.07 for 7%
+}
+
 export interface Assumptions {
   inflationRate: number; // as decimal
   safeWithdrawalRate: number; // as decimal
   retirementReturnRate: number; // as decimal
+  swrBuckets?: SwrBucket[]; // optional; empty/undefined → use safeWithdrawalRate for all years
+  bracketFillAdjustment?: number; // decimal in [-1.0, 1.0]; 0 = default; US-only
 }
 
 export interface YearlyAccountBalance {
@@ -96,6 +123,8 @@ export interface AccumulationResult {
   finalBalances: Record<string, number>;
   totalAtRetirement: number;
   breakdownByGroup: Record<string, number>; // Flexible groupings defined by country
+  conversionsByYear: ConversionYearRecord[];
+  lifetimeConversionTaxCost: number; // always ≥ 0; sum of pre-retirement taxDelta
 }
 
 export interface YearlyWithdrawal {
@@ -116,6 +145,7 @@ export interface YearlyWithdrawal {
   totalRemainingBalance: number;
   earlyWithdrawalPenalties: EarlyWithdrawalPenalty[];
   totalPenalties: number;
+  conversionAmount: number;
 }
 
 export interface RetirementResult {
@@ -125,6 +155,7 @@ export interface RetirementResult {
   sustainableMonthlyWithdrawal: number;
   sustainableAnnualWithdrawal: number;
   accountDepletionAges: Record<string, number | null>; // accountId -> age when depleted
+  lifetimeTaxDeltaFromConversion: number;
 }
 
 export interface AppState {

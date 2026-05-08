@@ -1,6 +1,8 @@
-import { Assumptions } from '../types';
+import { Assumptions, SwrBucket } from '../types';
 import { NumberInput } from './NumberInput';
 import { Tooltip } from './Tooltip';
+import { SwrBucketEditor } from './SwrBucketEditor';
+import { useCountry } from '../contexts/CountryContext';
 
 interface AssumptionsFormProps {
   assumptions: Assumptions;
@@ -10,10 +12,19 @@ interface AssumptionsFormProps {
 const inputClassName = "w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white";
 
 export function AssumptionsForm({ assumptions, onChange }: AssumptionsFormProps) {
+  const { country } = useCountry();
+
   const handleChange = (field: keyof Assumptions, value: number) => {
     onChange({
       ...assumptions,
       [field]: value,
+    });
+  };
+
+  const handleBucketsChange = (buckets: SwrBucket[]) => {
+    onChange({
+      ...assumptions,
+      swrBuckets: buckets,
     });
   };
 
@@ -55,8 +66,37 @@ export function AssumptionsForm({ assumptions, onChange }: AssumptionsFormProps)
             defaultValue={0.04}
             className={inputClassName}
           />
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Traditional rule: 4%</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            Traditional rule: 4%. Used for retirement years not covered by a bucket below.
+          </p>
         </div>
+
+        <SwrBucketEditor
+          buckets={assumptions.swrBuckets ?? []}
+          onChange={handleBucketsChange}
+        />
+
+        {country === 'US' && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Bracket-Fill Adjustment (%)
+              <Tooltip text="Slides the optional Traditional withdrawal step's ceiling up or down relative to the top of the 12% bracket. 0% (default) fills exactly to the top of the 12% bracket. Positive values pull more from Traditional now (paying some 22% tax) to preserve Roth. Negative values pull less, drawing more from Roth instead." />
+            </label>
+            <NumberInput
+              value={assumptions.bracketFillAdjustment ?? 0}
+              onChange={(val) => handleChange('bracketFillAdjustment', val)}
+              min={-100}
+              max={100}
+              isPercentage
+              decimals={0}
+              defaultValue={0}
+              className={inputClassName}
+            />
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Range: -100% disables bracket fill (standard deduction only). +100% extends fill into the 22% bracket.
+            </p>
+          </div>
+        )}
 
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">

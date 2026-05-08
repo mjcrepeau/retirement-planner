@@ -176,6 +176,17 @@ export function SummaryCards({
     ? lifetimePenalties / yearlyWithdrawals.length
     : 0;
 
+  const lifetimeConversionTaxCost = accumulationResult.lifetimeConversionTaxCost ?? 0;
+  const lifetimeTaxDeltaFromConversion = retirementResult.lifetimeTaxDeltaFromConversion ?? 0;
+
+  const inRetirementConversionTax = yearlyWithdrawals
+    .filter(y => y.conversionAmount > 0)
+    .reduce((acc, y) => acc + y.federalTax + y.stateTax, 0);
+
+  const hasPreRetirementConversion = (accumulationResult.conversionsByYear ?? []).length > 0;
+  const hasAnyConversion = hasPreRetirementConversion ||
+    yearlyWithdrawals.some(y => y.conversionAmount > 0);
+
   return (
     <div className="space-y-6">
       {/* Invalid Age Configuration Warning */}
@@ -192,6 +203,37 @@ export function SummaryCards({
                 retirement age ({profile.retirementAge}), which should be less than life expectancy ({profile.lifeExpectancy}).
               </p>
             </div>
+          </div>
+        </div>
+      )}
+
+      {hasPreRetirementConversion && (
+        <div>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
+            Pre-Retirement (Age {profile.currentAge} → {profile.retirementAge - 1})
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <ExpandableStatCard
+              title="Conversion Tax Cost"
+              value={formatCurrency(lifetimeConversionTaxCost)}
+              subtitle="Extra federal + state tax during accumulation"
+              color="red"
+              formula="Σ (tax(income+conversion) − tax(income)) over pre-retirement years"
+              details={
+                <div>
+                  <p className="font-medium mb-1">By year:</p>
+                  <ul className="space-y-0.5">
+                    {(accumulationResult.conversionsByYear ?? []).map(c => (
+                      <li key={c.age}>Age {c.age}: {formatCurrency(c.amount)} converted, {formatCurrency(c.taxDelta)} extra tax</li>
+                    ))}
+                  </ul>
+                  <p className="mt-2">
+                    Total converted (pre-retirement):{' '}
+                    {formatCurrency((accumulationResult.conversionsByYear ?? []).reduce((s, c) => s + c.amount, 0))}
+                  </p>
+                </div>
+              }
+            />
           </div>
         </div>
       )}
@@ -337,6 +379,11 @@ export function SummaryCards({
                 <p className="text-gray-500 dark:text-gray-400 italic mt-1">
                   Standard deduction: {formatCurrency(standardDeduction)} ({profile.filingStatus === 'married_filing_jointly' ? 'MFJ' : 'Single'})
                 </p>
+                {hasAnyConversion && yearlyWithdrawals.some(y => y.conversionAmount > 0) && (
+                  <p className="mt-2 text-gray-500 dark:text-gray-400 italic">
+                    Of which from conversions during retirement: ~{formatCurrency(inRetirementConversionTax)} (federal + state in years a conversion was active)
+                  </p>
+                )}
               </div>
             }
           />
@@ -417,6 +464,30 @@ export function SummaryCards({
               }
             />
           ) : null}
+          {hasAnyConversion && (
+            <ExpandableStatCard
+              title="Tax Change from Conversion"
+              value={`${lifetimeTaxDeltaFromConversion >= 0 ? '+' : '−'}${formatCurrency(Math.abs(lifetimeTaxDeltaFromConversion))}`}
+              subtitle={
+                lifetimeTaxDeltaFromConversion === 0
+                  ? 'Conversions had no net lifetime effect'
+                  : lifetimeTaxDeltaFromConversion < 0
+                    ? `Conversions saved ${formatCurrency(Math.abs(lifetimeTaxDeltaFromConversion))} over your lifetime`
+                    : `Conversions cost ${formatCurrency(lifetimeTaxDeltaFromConversion)} over your lifetime`
+              }
+              color={lifetimeTaxDeltaFromConversion < 0 ? 'green' : lifetimeTaxDeltaFromConversion > 0 ? 'red' : 'teal'}
+              formula="(Total taxes WITH conversions) − (Total taxes WITHOUT conversions)"
+              details={
+                <div>
+                  <p>Pre-retirement conversion tax: {formatCurrency(lifetimeConversionTaxCost)}</p>
+                  <p>Retirement-side change reflected in Lifetime Taxes via the shadow simulation.</p>
+                  <p className="text-gray-500 dark:text-gray-400 italic mt-1">
+                    Savings come from reduced future RMDs and tax-free Roth growth.
+                  </p>
+                </div>
+              }
+            />
+          )}
         </div>
       </div>
 

@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
-import { Account, Profile, Assumptions, IncomeStream } from './types';
-import { DEFAULT_PROFILE, DEFAULT_ASSUMPTIONS, DEFAULT_INCOME_STREAMS } from './utils/constants';
+import { Account, Profile, Assumptions, IncomeStream, ConversionPlan } from './types';
+import { DEFAULT_PROFILE, DEFAULT_ASSUMPTIONS, DEFAULT_INCOME_STREAMS, DEFAULT_CONVERSION_PLANS } from './utils/constants';
 import { useRetirementCalc } from './hooks/useRetirementCalc';
 import { useLocalStorage, useDarkMode } from './hooks/useLocalStorage';
 import { CountryProvider, useCountry } from './contexts/CountryContext';
@@ -11,6 +11,7 @@ import { AccountList } from './components/AccountList';
 import { ProfileForm } from './components/ProfileForm';
 import { AssumptionsForm } from './components/AssumptionsForm';
 import { IncomeStreamList } from './components/IncomeStreamList';
+import { RothConversionList } from './components/RothConversionList';
 import { SummaryCards } from './components/SummaryCards';
 import { ChartAccumulation } from './components/ChartAccumulation';
 import { ChartDrawdown } from './components/ChartDrawdown';
@@ -103,7 +104,7 @@ type TabType = 'accumulation' | 'retirement' | 'summary' | 'methodology';
 // Inner app component that uses the country context
 function AppContent() {
   // Country context
-  const { config: countryConfig } = useCountry();
+  const { country, config: countryConfig } = useCountry();
 
   // Load profile first (needed for account normalization)
   const [profile, setProfile, resetProfile] = useLocalStorage<Profile>(
@@ -142,6 +143,11 @@ function AppContent() {
     DEFAULT_INCOME_STREAMS
   );
 
+  const [conversionPlans, setConversionPlans, resetConversionPlans] = useLocalStorage<ConversionPlan[]>(
+    'retirement-planner-conversion-plans',
+    DEFAULT_CONVERSION_PLANS,
+  );
+
   // Dark mode
   const [isDarkMode, toggleDarkMode] = useDarkMode();
 
@@ -150,7 +156,7 @@ function AppContent() {
   const [expandedSection, setExpandedSection] = useState<string | null>('accounts');
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
-  const { accumulation, retirement } = useRetirementCalc(accounts, profile, assumptions, countryConfig, incomeStreams);
+  const { accumulation, retirement } = useRetirementCalc(accounts, profile, assumptions, countryConfig, incomeStreams, conversionPlans);
 
   const handleAddAccount = (account: Account) => {
     setAccounts(prev => [...prev, account]);
@@ -164,6 +170,7 @@ function AppContent() {
 
   const handleDeleteAccount = (id: string) => {
     setAccounts(prev => prev.filter(acc => acc.id !== id));
+    setConversionPlans(prev => prev.filter(p => p.sourceAccountId !== id && p.destinationAccountId !== id));
   };
 
   const handleAddIncomeStream = (stream: IncomeStream) => {
@@ -180,6 +187,16 @@ function AppContent() {
     setIncomeStreams(prev => prev.filter(s => s.id !== id));
   };
 
+  const handleAddConversionPlan = (plan: ConversionPlan) => {
+    setConversionPlans(prev => [...prev, plan]);
+  };
+  const handleUpdateConversionPlan = (updated: ConversionPlan) => {
+    setConversionPlans(prev => prev.map(p => (p.id === updated.id ? updated : p)));
+  };
+  const handleDeleteConversionPlan = (id: string) => {
+    setConversionPlans(prev => prev.filter(p => p.id !== id));
+  };
+
   const toggleSection = (section: string) => {
     setExpandedSection(prev => (prev === section ? null : section));
   };
@@ -193,10 +210,11 @@ function AppContent() {
     resetProfile();
     resetAssumptions();
     resetIncomeStreams();
+    resetConversionPlans();
     setShowResetConfirm(false);
     // Force reload to get fresh default accounts with new UUIDs
     window.location.reload();
-  }, [resetAccounts, resetProfile, resetAssumptions, resetIncomeStreams]);
+  }, [resetAccounts, resetProfile, resetAssumptions, resetIncomeStreams, resetConversionPlans]);
 
   const cancelReset = useCallback(() => {
     setShowResetConfirm(false);
@@ -333,6 +351,33 @@ function AppContent() {
               </div>
             )}
           </div>
+
+          {country === 'US' && (
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+              <button
+                onClick={() => toggleSection('conversions')}
+                className="w-full px-4 py-3 flex justify-between items-center hover:bg-gray-50 dark:hover:bg-gray-700 rounded-t-lg"
+              >
+                <span className="font-medium text-gray-900 dark:text-white">Roth Conversions</span>
+                <svg className={`w-5 h-5 text-gray-500 dark:text-gray-400 transition-transform ${expandedSection === 'conversions' ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {expandedSection === 'conversions' && (
+                <div className="px-4 pb-4">
+                  <RothConversionList
+                    conversionPlans={conversionPlans}
+                    accounts={accounts}
+                    currentAge={profile.currentAge}
+                    lifeExpectancy={profile.lifeExpectancy}
+                    onAdd={handleAddConversionPlan}
+                    onUpdate={handleUpdateConversionPlan}
+                    onDelete={handleDeleteConversionPlan}
+                  />
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Assumptions Section */}
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
@@ -501,6 +546,8 @@ function App() {
     localStorage.setItem('retirement-planner-income-streams',
       JSON.stringify(newCountry === 'US' ? DEFAULT_INCOME_STREAMS : [])
     );
+
+    localStorage.setItem('retirement-planner-conversion-plans', JSON.stringify([]));
 
     // Force reload to reinitialize with new country defaults
     window.location.reload();
