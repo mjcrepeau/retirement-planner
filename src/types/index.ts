@@ -136,6 +136,10 @@ export interface YearlyWithdrawal {
   governmentBenefitIncome: number;  // was socialSecurityIncome — Canada CPP/OAS only
   incomeStreamIncome: number;       // user-defined income streams (SS, pensions, etc.)
   grossIncome: number;
+  // The actual base for federal ordinary-income tax: traditional withdrawals
+  // + 85% of SS/government benefits + 100% of pension/other-income streams
+  // + Roth conversion amount. Differs from grossIncome (which is cash-in-hand).
+  taxableOrdinaryIncome: number;
   federalTax: number;
   stateTax: number;
   totalTax: number;
@@ -156,6 +160,15 @@ export interface RetirementResult {
   sustainableAnnualWithdrawal: number;
   accountDepletionAges: Record<string, number | null>; // accountId -> age when depleted
   lifetimeTaxDeltaFromConversion: number;
+  // Portfolio total at life expectancy: with-conversions minus without-conversions.
+  // Negative = conversions reduced terminal wealth; positive = conversions grew it.
+  // Captures second-order effects (RMD shifts, withdrawal-mix changes) that the
+  // tax-delta metric alone doesn't expose.
+  finalBalanceDeltaFromConversion: number;
+  // Sum of afterTaxIncome across all retirement years: with-conversions minus
+  // without-conversions. Typically negative — conversions raise ordinary income
+  // and therefore taxes during conversion years, reducing spending power.
+  lifetimeAfterTaxDeltaFromConversion: number;
 }
 
 export interface AppState {

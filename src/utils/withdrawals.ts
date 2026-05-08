@@ -312,6 +312,7 @@ export function calculateWithdrawals(
       governmentBenefitIncome,
       incomeStreamIncome: inflatedStreamIncome,
       grossIncome,
+      taxableOrdinaryIncome: ordinaryIncome,
       federalTax,
       stateTax,
       totalTax,
@@ -338,6 +339,8 @@ export function calculateWithdrawals(
     sustainableAnnualWithdrawal,
     accountDepletionAges,
     lifetimeTaxDeltaFromConversion: 0,
+    finalBalanceDeltaFromConversion: 0,
+    lifetimeAfterTaxDeltaFromConversion: 0,
   };
 }
 
