@@ -2759,6 +2759,228 @@ function testBracketFillAdjustment(): void {
 }
 
 // =============================================================================
+// INCOME STREAM FLAGS — fixedPayment + applySSReduction
+// =============================================================================
+
+function testIncomeStreamFlags(): void {
+  section('INCOME STREAM FLAGS — fixedPayment + applySSReduction');
+
+  const account: Account = {
+    id: 'a',
+    name: 'Trad',
+    type: 'traditional_401k',
+    balance: 5_000_000,
+    annualContribution: 0,
+    contributionGrowthRate: 0,
+    returnRate: 0,
+  };
+  const baseProfile: Profile = {
+    country: 'US',
+    currentAge: 50,
+    retirementAge: 70,
+    lifeExpectancy: 80,
+    region: 'TX',
+    filingStatus: 'single',
+    stateTaxRate: 0,
+  };
+  const inflationAssumptions: Assumptions = {
+    inflationRate: 0.03,
+    safeWithdrawalRate: 0.04,
+    retirementReturnRate: 0,
+  };
+
+  console.log('\n--- fixedPayment annuity stays flat across all retirement years ---');
+
+  // currentAge=50 → at age 70 (first retirement year), yearsFromNow=20.
+  // Without fixedPayment, the $36k/yr would be inflated 20 years (~$65k);
+  // WITH fixedPayment, it should stay $36k every year.
+  const fixedPensionStream: IncomeStream = {
+    id: 'fix',
+    name: 'Fixed Annuity',
+    monthlyAmount: 3000,    // $36k/yr nominal
+    startAge: 70,
+    taxTreatment: 'fully_taxable',
+    fixedPayment: true,
+  };
+  const accumFix = calculateAccumulation([account], baseProfile, usConfig);
+  const resultFix = calculateWithdrawals(
+    [account], baseProfile, inflationAssumptions, accumFix, usConfig, [fixedPensionStream],
+  );
+  const fix70 = resultFix.yearlyWithdrawals.find(y => y.age === 70);
+  const fix75 = resultFix.yearlyWithdrawals.find(y => y.age === 75);
+  assert(fix70 !== undefined && fix75 !== undefined, 'fixed-pension run produced age-70 and age-75 records');
+
+  if (fix70 && fix75) {
+    assertApprox(
+      fix70.incomeStreamIncome, 36_000, 0.5,
+      'fixedPayment=true at age 70 (year 20): annual = monthly × 12 with no inflation'
+    );
+    assertApprox(
+      fix75.incomeStreamIncome, 36_000, 0.5,
+      'fixedPayment=true at age 75 (year 25): still $36k flat'
+    );
+  }
+
+  console.log('\n--- Same stream WITHOUT fixedPayment inflates from currentAge ---');
+
+  const inflatedPensionStream: IncomeStream = {
+    ...fixedPensionStream,
+    id: 'infl',
+    fixedPayment: false,
+  };
+  const resultInfl = calculateWithdrawals(
+    [account], baseProfile, inflationAssumptions, accumFix, usConfig, [inflatedPensionStream],
+  );
+  const infl70 = resultInfl.yearlyWithdrawals.find(y => y.age === 70);
+  if (infl70) {
+    const expected = 36_000 * Math.pow(1.03, 20);
+    assertApprox(
+      infl70.incomeStreamIncome, expected, 0.5,
+      `fixedPayment=false at age 70: $36k × 1.03^20 ≈ $${expected.toFixed(0)}`
+    );
+    assert(
+      infl70.incomeStreamIncome > 60_000,
+      `default-inflated stream is meaningfully larger than fixed (got $${infl70.incomeStreamIncome.toFixed(0)})`
+    );
+  }
+
+  console.log('\n--- SS underfunding: applySSReduction kicks in at calendar year 2032 ---');
+
+  // Test against the actual calendar year of each yearly record (robust against
+  // running these tests at various clock times). With inflationRate=0 the SS
+  // amount is just $30k flat before 2032, $25.5k from 2032 onward.
+  const ssProfile: Profile = {
+    country: 'US',
+    currentAge: 65,
+    retirementAge: 65,
+    lifeExpectancy: 80,
+    region: 'TX',
+    filingStatus: 'single',
+    stateTaxRate: 0,
+  };
+  const flatAssumptions: Assumptions = {
+    inflationRate: 0,
+    safeWithdrawalRate: 0.04,
+    retirementReturnRate: 0,
+  };
+  const ssStream: IncomeStream = {
+    id: 'ss',
+    name: 'SS',
+    monthlyAmount: 2500,    // $30k/yr
+    startAge: 65,
+    taxTreatment: 'social_security',
+    applySSReduction: true,
+  };
+  const accumSS = calculateAccumulation([account], ssProfile, usConfig);
+  const resultSS = calculateWithdrawals(
+    [account], ssProfile, flatAssumptions, accumSS, usConfig, [ssStream],
+  );
+
+  const before = resultSS.yearlyWithdrawals.find(y => y.year === 2031);
+  const at = resultSS.yearlyWithdrawals.find(y => y.year === 2032);
+  const after = resultSS.yearlyWithdrawals.find(y => y.year === 2033);
+
+  if (before) {
+    assertApprox(
+      before.incomeStreamIncome, 30_000, 0.5,
+      'Year 2031 (pre-cutoff): SS pays full $30k'
+    );
+  }
+  if (at) {
+    assertApprox(
+      at.incomeStreamIncome, 25_500, 0.5,
+      'Year 2032 (cutoff year): SS reduced 15% to $25.5k'
+    );
+  }
+  if (after) {
+    assertApprox(
+      after.incomeStreamIncome, 25_500, 0.5,
+      'Year 2033 (post-cutoff): SS still reduced to $25.5k'
+    );
+  }
+
+  console.log('\n--- Multi-stream: fixed annuity stays flat alongside an inflated SS stream ---');
+
+  // Regression for the per-stream display: previously the table split the
+  // total by monthlyAmount ratios, which re-inflated fixed-payment streams.
+  // Now the engine populates incomeStreamByStream so the display can read
+  // each stream's actual nominal amount that year.
+  const annuityStream: IncomeStream = {
+    id: 'ann',
+    name: 'Annuity',
+    monthlyAmount: 1000,    // $12k/yr fixed
+    startAge: 65,
+    taxTreatment: 'fully_taxable',
+    fixedPayment: true,
+  };
+  const ssInflated: IncomeStream = {
+    id: 'ssi',
+    name: 'SS',
+    monthlyAmount: 2000,    // $24k/yr today's $
+    startAge: 65,
+    taxTreatment: 'social_security',
+  };
+  const multiProfile: Profile = {
+    country: 'US',
+    currentAge: 65,
+    retirementAge: 65,
+    lifeExpectancy: 75,
+    region: 'TX',
+    filingStatus: 'single',
+    stateTaxRate: 0,
+  };
+  const accumMulti = calculateAccumulation([account], multiProfile, usConfig);
+  const resultMulti = calculateWithdrawals(
+    [account], multiProfile, inflationAssumptions, accumMulti, usConfig, [annuityStream, ssInflated],
+  );
+  const m65 = resultMulti.yearlyWithdrawals.find(y => y.age === 65);
+  const m70 = resultMulti.yearlyWithdrawals.find(y => y.age === 70);
+  if (m65 && m70) {
+    assertApprox(
+      m65.incomeStreamByStream['ann'], 12_000, 0.5,
+      'Multi-stream age 65: annuity = $12k flat (fixedPayment)'
+    );
+    assertApprox(
+      m70.incomeStreamByStream['ann'], 12_000, 0.5,
+      'Multi-stream age 70: annuity STILL $12k flat despite 5 years of inflation'
+    );
+    assertApprox(
+      m65.incomeStreamByStream['ssi'], 24_000, 0.5,
+      'Multi-stream age 65: SS = $24k (year 0, no inflation yet)'
+    );
+    const expectedSS70 = 24_000 * Math.pow(1.03, 5);
+    assertApprox(
+      m70.incomeStreamByStream['ssi'], expectedSS70, 1.0,
+      `Multi-stream age 70: SS = $24k × 1.03^5 ≈ $${expectedSS70.toFixed(0)} (inflated)`
+    );
+  }
+
+  console.log('\n--- SS-reduction flag has no effect when taxTreatment is not social_security ---');
+
+  // applySSReduction=true on a pension stream should be IGNORED — the engine
+  // gates on taxTreatment === 'social_security' to prevent stale flags from
+  // misclassified streams from triggering cuts.
+  const misflaggedPension: IncomeStream = {
+    id: 'mp',
+    name: 'Pension (mistakenly flagged)',
+    monthlyAmount: 2500,
+    startAge: 65,
+    taxTreatment: 'fully_taxable',
+    applySSReduction: true,
+  };
+  const resultMP = calculateWithdrawals(
+    [account], ssProfile, flatAssumptions, accumSS, usConfig, [misflaggedPension],
+  );
+  const mp2032 = resultMP.yearlyWithdrawals.find(y => y.year === 2032);
+  if (mp2032) {
+    assertApprox(
+      mp2032.incomeStreamIncome, 30_000, 0.5,
+      'Year 2032: pension with applySSReduction=true is NOT reduced (treatment gate)'
+    );
+  }
+}
+
+// =============================================================================
 // FEDERAL BRACKET INDEXING TESTS
 // =============================================================================
 
@@ -2798,10 +3020,12 @@ function testFederalBracketIndexing(): void {
   const y65Zero = resultZero.yearlyWithdrawals.find(y => y.age === 65);
   assert(y65Zero !== undefined, 'inflation=0 run produced age-65 record');
   if (y65Zero) {
-    const expectedFed = calculateTotalFederalTax(y65Zero.taxableOrdinaryIncome, 0, 'single');
+    // taxableOrdinaryIncome is now POST-std-deduction. Use calculateFederalIncomeTax
+    // directly (it operates on already-deducted income).
+    const expectedFed = calculateFederalIncomeTax(y65Zero.taxableOrdinaryIncome, 'single');
     assertApprox(
       y65Zero.federalTax, expectedFed, 0.5,
-      'inflation=0: federalTax matches calculateTotalFederalTax exactly'
+      'inflation=0: federalTax matches calculateFederalIncomeTax(taxableOrdinaryIncome)'
     );
   }
 
@@ -2819,10 +3043,11 @@ function testFederalBracketIndexing(): void {
   const y65Infl = resultInfl.yearlyWithdrawals.find(y => y.age === 65);
   assert(y65Infl !== undefined, 'inflation=0.03 run produced age-65 record');
   if (y65Infl) {
-    const expectedFed = calculateTotalFederalTax(y65Infl.taxableOrdinaryIncome, 0, 'single');
+    // year 0: multiplier = 1, taxableOrdinaryIncome is post-deduction.
+    const expectedFed = calculateFederalIncomeTax(y65Infl.taxableOrdinaryIncome, 'single');
     assertApprox(
       y65Infl.federalTax, expectedFed, 0.5,
-      'year 0: yearsFromNow=0 → multiplier=1 → fed tax = direct call regardless of inflationRate'
+      'year 0: yearsFromNow=0 → multiplier=1 → fed tax = calculateFederalIncomeTax(post-deduction income)'
     );
   }
 
@@ -2849,19 +3074,25 @@ function testFederalBracketIndexing(): void {
     assert(y70.taxableOrdinaryIncome > 0, `age 70 has nonzero taxable income (got ${y70.taxableOrdinaryIncome})`);
     // yearsFromNow = 70 - 50 = 20; bracket multiplier = (1 + 0.5*0.03)^20 = 1.015^20
     const m = Math.pow(1.015, 20);
-    const expectedFed = calculateTotalFederalTax(
-      y70.taxableOrdinaryIncome / m, 0, 'single',
+    // taxableOrdinaryIncome is now POST-std-deduction (indexed). For the
+    // deflate-compute-scale property, divide post-deduction income by m and
+    // run through calculateFederalIncomeTax (which doesn't subtract std ded again).
+    const expectedFed = calculateFederalIncomeTax(
+      y70.taxableOrdinaryIncome / m, 'single',
     ) * m;
     assertApprox(
       y70.federalTax, expectedFed, 5.0,
-      `year 20 with 3% inflation: fed tax = ${m.toFixed(4)} × tax(income / ${m.toFixed(4)})`
+      `year 20 with 3% inflation: fed tax = ${m.toFixed(4)} × federalIncomeTax(post-ded income / ${m.toFixed(4)})`
     );
 
     // Sanity: indexed tax should be strictly less than the unindexed tax for the
     // same nominal income (the brackets have stretched, lower marginal rate hits).
-    const unindexedFed = calculateTotalFederalTax(
-      y70.taxableOrdinaryIncome, 0, 'single',
-    );
+    // Recover gross ordinaryIncome from the post-deduction column to evaluate the
+    // unindexed scenario via calculateTotalFederalTax (which subtracts the
+    // un-indexed std deduction internally).
+    const stdDedSingle = getStandardDeduction('single');
+    const ordinaryIncome = y70.taxableOrdinaryIncome + stdDedSingle * m;
+    const unindexedFed = calculateTotalFederalTax(ordinaryIncome, 0, 'single');
     assert(
       y70.federalTax < unindexedFed,
       `Indexed federal tax (${y70.federalTax.toFixed(0)}) should be < unindexed (${unindexedFed.toFixed(0)})`
@@ -2977,6 +3208,7 @@ function runAllTests(): void {
   testEarlyWithdrawalPenalties();
   testIncomeStreamCalculator();
   testIncomeStreamWithdrawals();
+  testIncomeStreamFlags();
   testRothConversionTaxDelta();
   testApplyConversionsForYear();
   testRothConversionAccumulation();

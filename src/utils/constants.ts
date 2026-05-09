@@ -51,6 +51,14 @@ export const CAPITAL_GAINS_BRACKETS_SINGLE: TaxBracket[] = [
 // RMD starts at age 73 (SECURE 2.0 Act)
 export const RMD_START_AGE = 73;
 
+// Social Security trust fund projected depletion year (per the 2024 SSA
+// Trustees report). Absent legislative action, scheduled benefits would be
+// reduced by an estimated 17% from that point. The model uses a 15% cut
+// when a user opts in via per-stream checkbox — conservative midpoint of
+// commonly cited 10–20% scenarios.
+export const SS_REDUCTION_YEAR = 2032;
+export const SS_REDUCTION_FACTOR = 0.85;
+
 // IRS Uniform Lifetime Table (simplified version)
 export const RMD_TABLE: RMDEntry[] = [
   { age: 73, divisor: 26.5 },

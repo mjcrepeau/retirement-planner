@@ -16,11 +16,16 @@ import {
   getStandardDeduction,
 } from './taxes';
 import { applyConversionsForYear } from './conversions';
-import { getRMDDivisor, RMD_START_AGE, FEDERAL_BRACKET_INFLATION_RATIO } from './constants';
+import {
+  getRMDDivisor,
+  RMD_START_AGE,
+  FEDERAL_BRACKET_INFLATION_RATIO,
+  SS_REDUCTION_YEAR,
+  SS_REDUCTION_FACTOR,
+} from './constants';
 import type { CountryConfig } from '../countries';
 import { calculatePenalties, type AccountWithdrawal } from './penaltyCalculator';
 import { getDefaultWithdrawalAge } from './withdrawalDefaults';
-import { calculateIncomeStreamBenefits } from './incomeStreams';
 import { rateForAge } from './swrBuckets';
 
 interface AccountState {
@@ -163,16 +168,41 @@ export function calculateWithdrawals(
     }
     const governmentBenefitIncome = governmentBenefits;
 
-    // Calculate user-defined income stream benefits
-    const streamResult = calculateIncomeStreamBenefits(incomeStreams || [], age);
-    // Apply inflation adjustment (stream amounts are in today's dollars)
-    const inflatedStreamIncome = streamResult.totalIncome * inflationMultiplier;
+    // Calculate user-defined income stream benefits, per-stream so per-stream
+    // flags (fixedPayment, applySSReduction) can be honored individually.
+    //
+    // Default behavior: monthlyAmount × 12 in today's dollars, inflated from
+    // currentAge to the current retirement year.
+    // - fixedPayment === true: skip inflation entirely (annuity-style nominal $).
+    // - applySSReduction === true (SS streams only): apply SS_REDUCTION_FACTOR
+    //   for calendar years >= SS_REDUCTION_YEAR, simulating the projected
+    //   trust-fund shortfall.
     const inflatedStreamByTax = {
-      social_security: streamResult.byTaxTreatment.social_security * inflationMultiplier,
-      fully_taxable: streamResult.byTaxTreatment.fully_taxable * inflationMultiplier,
-      other_income: streamResult.byTaxTreatment.other_income * inflationMultiplier,
-      tax_free: streamResult.byTaxTreatment.tax_free * inflationMultiplier,
+      social_security: 0,
+      fully_taxable: 0,
+      other_income: 0,
+      tax_free: 0,
     };
+    const incomeStreamByStream: Record<string, number> = {};
+    let inflatedStreamIncome = 0;
+    for (const stream of incomeStreams ?? []) {
+      if (age < stream.startAge) continue;
+      if (stream.endAge !== undefined && age > stream.endAge) continue;
+      const annualAmount = stream.monthlyAmount * 12;
+      let amount = stream.fixedPayment
+        ? annualAmount
+        : annualAmount * inflationMultiplier;
+      if (
+        stream.applySSReduction
+        && stream.taxTreatment === 'social_security'
+        && year >= SS_REDUCTION_YEAR
+      ) {
+        amount *= SS_REDUCTION_FACTOR;
+      }
+      inflatedStreamByTax[stream.taxTreatment] += amount;
+      incomeStreamByStream[stream.id] = amount;
+      inflatedStreamIncome += amount;
+    }
 
     const totalRetirementIncome = governmentBenefitIncome + inflatedStreamIncome;
 
@@ -336,8 +366,13 @@ export function calculateWithdrawals(
       totalWithdrawal: grossWithdrawal,
       governmentBenefitIncome,
       incomeStreamIncome: inflatedStreamIncome,
+      incomeStreamByStream,
       grossIncome,
-      taxableOrdinaryIncome: ordinaryIncome,
+      // For US, subtract the (inflation-indexed) standard deduction so the
+      // displayed value matches IRS "taxable income" — the actual base for
+      // federal brackets. For Canada, keep the gross figure since BPA is a
+      // non-refundable tax credit, not a deduction; gross IS the bracket base.
+      taxableOrdinaryIncome: isUS ? Math.max(0, ordinaryIncome - indexedStdDed) : ordinaryIncome,
       federalTax,
       stateTax,
       totalTax,

@@ -33,10 +33,17 @@ export type IncomeTaxTreatment = 'social_security' | 'fully_taxable' | 'other_in
 export interface IncomeStream {
   id: string;
   name: string;
-  monthlyAmount: number;      // in today's dollars
+  monthlyAmount: number;      // in today's dollars (or fixed nominal $ if fixedPayment === true)
   startAge: number;
   endAge?: number;            // optional: last age income is received
   taxTreatment: IncomeTaxTreatment;
+  // Annuity-style: nominal payment, never inflation-adjusted. Mostly intended
+  // for fixed-payment annuities and similar pensions without COLA. Default false.
+  fixedPayment?: boolean;
+  // Social Security only: when true, simulate the projected post-2032 trust-fund
+  // shortfall by applying SS_REDUCTION_FACTOR (0.85) to the inflated benefit
+  // starting in calendar year SS_REDUCTION_YEAR (2032). Default false.
+  applySSReduction?: boolean;
 }
 
 export interface ConversionPlan {
@@ -135,10 +142,17 @@ export interface YearlyWithdrawal {
   totalWithdrawal: number;
   governmentBenefitIncome: number;  // was socialSecurityIncome — Canada CPP/OAS only
   incomeStreamIncome: number;       // user-defined income streams (SS, pensions, etc.)
+  // Per-stream nominal income for the year, keyed by stream id. Populated only
+  // for streams active at this age. Streams diverge (fixed-payment vs inflated,
+  // SS-reduction vs not), so the table/chart can't use a proportional split of
+  // incomeStreamIncome — they read from this map instead.
+  incomeStreamByStream: Record<string, number>;
   grossIncome: number;
-  // The actual base for federal ordinary-income tax: traditional withdrawals
-  // + 85% of SS/government benefits + 100% of pension/other-income streams
-  // + Roth conversion amount. Differs from grossIncome (which is cash-in-hand).
+  // IRS-style "taxable income" — the actual base for federal income brackets.
+  // For US: traditional withdrawals + 85% SS/gov benefits + 100% pensions/other-income
+  // + Roth conversion − (indexed) standard deduction (clamped at 0).
+  // For Canada: same gross figure without subtraction (BPA is a credit, not a
+  // deduction; gross is the bracket base in Canadian tax math).
   taxableOrdinaryIncome: number;
   federalTax: number;
   stateTax: number;
