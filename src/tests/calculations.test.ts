@@ -16,9 +16,10 @@ import {
   getStandardDeduction,
 } from '../utils/taxes';
 import { getRMDDivisor } from '../utils/constants';
-import { Account, Profile, Assumptions, IncomeStream } from '../types';
+import { Account, Profile, Assumptions, IncomeStream, ConversionPlan, SwrBucket } from '../types';
 import { getCountryConfig } from '../countries';
 import { getDefaultWithdrawalAge, getMaxWithdrawalAge } from '../utils/withdrawalDefaults';
+import { calculateConversionTaxDelta, applyConversionsForYear } from '../utils/conversions';
 
 // Get US config for tests
 const usConfig = getCountryConfig('US');
@@ -1868,6 +1869,1319 @@ function testIncomeStreamWithdrawals(): void {
 }
 
 // =============================================================================
+// ROTH CONVERSION TESTS
+// =============================================================================
+
+function testRothConversionTaxDelta(): void {
+  section('ROTH CONVERSION — Tax delta');
+
+  // $100k income MFJ, $30k conversion → tax(130k) - tax(100k) at federal+state
+  const filingStatus = 'married_filing_jointly';
+  const stateTaxRate = 0.05;
+
+  const incomeOnly = calculateTotalFederalTax(100_000, 0, filingStatus)
+    + calculateStateTax(100_000 - getStandardDeduction(filingStatus), stateTaxRate);
+  const incomePlus = calculateTotalFederalTax(130_000, 0, filingStatus)
+    + calculateStateTax(130_000 - getStandardDeduction(filingStatus), stateTaxRate);
+  const expectedDelta = incomePlus - incomeOnly;
+
+  const delta = calculateConversionTaxDelta({
+    incomeForYear: 100_000,
+    conversionTotalForYear: 30_000,
+    filingStatus,
+    stateTaxRate,
+  });
+  assertApprox(delta, expectedDelta, 0.01,
+    '$30k conversion on $100k MFJ income produces correct federal+state delta');
+
+  // Bracket-straddling: $50k conversion crossing 22%/24% boundary
+  const incomeBase = calculateTotalFederalTax(180_000, 0, filingStatus)
+    + calculateStateTax(180_000 - getStandardDeduction(filingStatus), stateTaxRate);
+  const incomePlusBig = calculateTotalFederalTax(230_000, 0, filingStatus)
+    + calculateStateTax(230_000 - getStandardDeduction(filingStatus), stateTaxRate);
+  const deltaBig = calculateConversionTaxDelta({
+    incomeForYear: 180_000,
+    conversionTotalForYear: 50_000,
+    filingStatus,
+    stateTaxRate,
+  });
+  assertApprox(deltaBig, incomePlusBig - incomeBase, 0.01,
+    '$50k conversion straddling 22%/24% bracket boundary computed via two-pass');
+
+  // Zero conversion → zero delta
+  const zeroDelta = calculateConversionTaxDelta({
+    incomeForYear: 100_000,
+    conversionTotalForYear: 0,
+    filingStatus,
+    stateTaxRate,
+  });
+  assertApprox(zeroDelta, 0, 0.01, 'Zero conversion produces zero tax delta');
+
+  // Regression: income below standard deduction. The standard deduction's unused
+  // portion should still offset the conversion. Without this guard, the delta
+  // would be overstated.
+  // Total taxable with conversion: max(0, 20k + 30k - 29.2k) = 20.8k
+  // Total taxable without:        max(0, 20k - 29.2k)        = 0
+  // True delta = state tax on 20.8k + federal tax on 20.8k.
+  const lowIncome = 20_000;
+  const conversion = 30_000;
+  const stdDed = getStandardDeduction(filingStatus);
+  const expectedFedDelta = calculateTotalFederalTax(lowIncome + conversion, 0, filingStatus)
+    - calculateTotalFederalTax(lowIncome, 0, filingStatus);
+  const expectedStateDelta = calculateStateTax(Math.max(0, lowIncome + conversion - stdDed), stateTaxRate)
+    - calculateStateTax(Math.max(0, lowIncome - stdDed), stateTaxRate);
+  const lowIncomeDelta = calculateConversionTaxDelta({
+    incomeForYear: lowIncome,
+    conversionTotalForYear: conversion,
+    filingStatus,
+    stateTaxRate,
+  });
+  assertApprox(lowIncomeDelta, expectedFedDelta + expectedStateDelta, 0.01,
+    'Low-income case: unused standard deduction reduces conversion delta correctly');
+}
+
+function testApplyConversionsForYear(): void {
+  section('ROTH CONVERSION — applyConversionsForYear');
+
+  // Source has $100k after growth; plan converts $30k inflation-adjusted at age 50
+  const sourceBalances: Record<string, number> = { src: 100_000, dst: 50_000 };
+  const plans: ConversionPlan[] = [{
+    id: 'p1', name: 'ladder', sourceAccountId: 'src', destinationAccountId: 'dst',
+    startAge: 50, endAge: 55, yearlyAmount: 30_000,
+  }];
+
+  const out = applyConversionsForYear({
+    age: 50,
+    yearsFromNow: 15,
+    plans,
+    balances: sourceBalances,
+    inflationRate: 0.03,
+  });
+  const expectedAmount = 30_000 * Math.pow(1.03, 15);
+  assertApprox(out.totalConvertedThisYear, expectedAmount, 0.01,
+    'Year 15 nominal amount = 30k × 1.03^15');
+  assertApprox(sourceBalances['src'], 100_000 - expectedAmount, 0.01, 'Source balance reduced');
+  assertApprox(sourceBalances['dst'], 50_000 + expectedAmount, 0.01, 'Destination balance increased');
+
+  // Plan outside age range does not fire
+  const out2 = applyConversionsForYear({
+    age: 49, yearsFromNow: 14, plans,
+    balances: { src: 100_000, dst: 0 }, inflationRate: 0.03,
+  });
+  assertApprox(out2.totalConvertedThisYear, 0, 0.01, 'Plan inactive at age < startAge');
+
+  // Insufficient balance → silent cap
+  const balances3 = { src: 5_000, dst: 0 };
+  const out3 = applyConversionsForYear({
+    age: 50, yearsFromNow: 0, plans, balances: balances3, inflationRate: 0.03,
+  });
+  assertApprox(out3.totalConvertedThisYear, 5_000, 0.01, 'Capped to available balance');
+  assertApprox(balances3['src'], 0, 0.01, 'Source drained to zero');
+  assertApprox(balances3['dst'], 5_000, 0.01, 'Destination receives capped amount');
+
+  // Multiple plans active same year — both fire, second sees reduced source
+  const balancesMulti = { src: 40_000, dst: 0 };
+  const plansMulti: ConversionPlan[] = [
+    { id: 'a', name: 'A', sourceAccountId: 'src', destinationAccountId: 'dst',
+      startAge: 50, endAge: 55, yearlyAmount: 25_000 },
+    { id: 'b', name: 'B', sourceAccountId: 'src', destinationAccountId: 'dst',
+      startAge: 50, endAge: 55, yearlyAmount: 25_000 },
+  ];
+  const outMulti = applyConversionsForYear({
+    age: 50, yearsFromNow: 0, plans: plansMulti, balances: balancesMulti, inflationRate: 0.03,
+  });
+  assertApprox(outMulti.totalConvertedThisYear, 40_000, 0.01,
+    'Two plans share source; combined cap to source balance');
+  assertApprox(balancesMulti['src'], 0, 0.01, 'Source drained by two plans');
+  assertApprox(balancesMulti['dst'], 40_000, 0.01, 'Destination got the combined cap');
+}
+
+function testRothConversionAccumulation(): void {
+  section('ROTH CONVERSION — Accumulation integration');
+
+  const profile: Profile = {
+    country: 'US',
+    currentAge: 50,
+    retirementAge: 55,
+    lifeExpectancy: 80,
+    region: 'CA',
+    filingStatus: 'married_filing_jointly',
+    stateTaxRate: 0.05,
+    annualIncome: 100_000,
+    incomeGrowthRate: 0,
+  };
+  const assumptions: Assumptions = {
+    inflationRate: 0,
+    safeWithdrawalRate: 0.04,
+    retirementReturnRate: 0.05,
+  };
+  const accounts: Account[] = [
+    { id: 'src', name: 'Trad IRA', type: 'traditional_ira',
+      balance: 200_000, annualContribution: 0, contributionGrowthRate: 0, returnRate: 0 },
+    { id: 'dst', name: 'Roth IRA', type: 'roth_ira',
+      balance: 0, annualContribution: 0, contributionGrowthRate: 0, returnRate: 0 },
+  ];
+  const plans: ConversionPlan[] = [{
+    id: 'p', name: 'ladder', sourceAccountId: 'src', destinationAccountId: 'dst',
+    startAge: 50, endAge: 51, yearlyAmount: 30_000,
+  }];
+
+  const result = calculateAccumulation(accounts, profile, usConfig, assumptions, plans);
+
+  // After 5 yearly steps: ages 51 (year 1), 52, 53, 54, 55. Plan fires at 51 only
+  // (age 50 is the initial state, no growth/conversion applied yet).
+  // currentAge=50, retirementAge=55, the loop runs i=1..5, age=51..55.
+  // startAge=50, endAge=51 → only fires when age==51.
+  // Source: $200k → $170k after one $30k conversion.
+  // Dest: $0 → $30k.
+  assertApprox(result.finalBalances['src'], 170_000, 0.01,
+    'Source reduced by one $30k conversion');
+  assertApprox(result.finalBalances['dst'], 30_000, 0.01,
+    'Destination grew by $30k');
+
+  // Tax delta: tax(130k MFJ + state) - tax(100k MFJ + state)
+  const stdDed = getStandardDeduction('married_filing_jointly');
+  const expectedDelta =
+    (calculateTotalFederalTax(130_000, 0, 'married_filing_jointly')
+      + calculateStateTax(130_000 - stdDed, 0.05))
+    - (calculateTotalFederalTax(100_000, 0, 'married_filing_jointly')
+      + calculateStateTax(100_000 - stdDed, 0.05));
+  assertApprox(result.lifetimeConversionTaxCost, expectedDelta, 0.01,
+    'lifetimeConversionTaxCost matches single-year delta');
+  assert(result.conversionsByYear.length === 1, 'One conversion year recorded');
+  if (result.conversionsByYear.length === 1) {
+    assertApprox(result.conversionsByYear[0].amount, 30_000, 0.01,
+      'Recorded amount = $30k');
+  }
+
+  // Multi-year with inflation: redo with non-zero inflation
+  const assumptionsInfl: Assumptions = { ...assumptions, inflationRate: 0.03 };
+  const plans2: ConversionPlan[] = [{
+    id: 'p2', name: 'ladder2', sourceAccountId: 'src', destinationAccountId: 'dst',
+    startAge: 50, endAge: 53, yearlyAmount: 10_000,
+  }];
+  const accounts2: Account[] = [
+    { id: 'src', name: 'Trad IRA', type: 'traditional_ira',
+      balance: 200_000, annualContribution: 0, contributionGrowthRate: 0, returnRate: 0 },
+    { id: 'dst', name: 'Roth IRA', type: 'roth_ira',
+      balance: 0, annualContribution: 0, contributionGrowthRate: 0, returnRate: 0 },
+  ];
+  const r2 = calculateAccumulation(accounts2, profile, usConfig, assumptionsInfl, plans2);
+  // Plan fires at ages 51, 52, 53 (3 times).
+  // yearsFromNow at each: 1, 2, 3 → amounts 10000*1.03^1, *1.03^2, *1.03^3
+  const expectedTotalConverted =
+    10_000 * 1.03 + 10_000 * Math.pow(1.03, 2) + 10_000 * Math.pow(1.03, 3);
+  assertApprox(r2.finalBalances['dst'], expectedTotalConverted, 0.01,
+    'Multi-year inflation-adjusted conversions sum correctly into destination');
+  assert(r2.conversionsByYear.length === 3, 'Three conversion years recorded');
+}
+
+function testRothConversionRetirement(): void {
+  section('ROTH CONVERSION — Retirement integration');
+
+  // Conversion in retirement window: tax included in year's tax, no penalty,
+  // bracket-fill withdrawal logic unchanged, source draining + dest growing.
+  const profile: Profile = {
+    country: 'US',
+    currentAge: 60,
+    retirementAge: 60,        // already retired
+    lifeExpectancy: 65,
+    region: 'CA',
+    filingStatus: 'married_filing_jointly',
+    stateTaxRate: 0.05,
+    annualIncome: 0,          // not used in retirement
+    incomeGrowthRate: 0,
+  };
+  const assumptions: Assumptions = {
+    inflationRate: 0,
+    safeWithdrawalRate: 0.04,
+    retirementReturnRate: 0,
+  };
+  const accounts: Account[] = [
+    { id: 'src', name: 'Trad IRA', type: 'traditional_ira',
+      balance: 500_000, annualContribution: 0, contributionGrowthRate: 0, returnRate: 0,
+      withdrawalRules: { startAge: 60 } },
+    { id: 'dst', name: 'Roth IRA', type: 'roth_ira',
+      balance: 100_000, annualContribution: 0, contributionGrowthRate: 0, returnRate: 0,
+      withdrawalRules: { startAge: 60 } },
+  ];
+  const plans: ConversionPlan[] = [{
+    id: 'p', name: 'rl', sourceAccountId: 'src', destinationAccountId: 'dst',
+    startAge: 60, endAge: 62, yearlyAmount: 30_000,
+  }];
+
+  const accum = calculateAccumulation(accounts, profile, usConfig, assumptions, plans);
+  // currentAge==retirementAge → 0 accumulation years → no pre-retirement conversions
+  assertApprox(accum.lifetimeConversionTaxCost, 0, 0.01,
+    'No accumulation phase → zero pre-retirement conversion cost');
+
+  const retired = calculateWithdrawals(accounts, profile, assumptions, accum, usConfig, [], plans);
+
+  // Source should drain by ~$30k * 3 = $90k from conversions plus any spending withdrawals.
+  // Dest should grow by ~$90k from conversions, minus any spending withdrawals.
+  const y60 = retired.yearlyWithdrawals.find(w => w.age === 60);
+  const y61 = retired.yearlyWithdrawals.find(w => w.age === 61);
+  const y62 = retired.yearlyWithdrawals.find(w => w.age === 62);
+  assert(y60 !== undefined && y61 !== undefined && y62 !== undefined,
+    'Has yearly data for ages 60, 61, 62');
+  if (y60 && y61 && y62) {
+    assertApprox(y60.conversionAmount, 30_000, 0.01, 'Year 60 records $30k conversion');
+    assertApprox(y61.conversionAmount, 30_000, 0.01, 'Year 61 records $30k conversion');
+    assertApprox(y62.conversionAmount, 30_000, 0.01, 'Year 62 records $30k conversion');
+    // The conversion event itself should not produce an early-withdrawal penalty.
+    assert(
+      !y60.earlyWithdrawalPenalties.some(p => p.accountId === 'src'),
+      'Conversion does not produce an early-withdrawal penalty on source account'
+    );
+  }
+
+  // No conversion year (age 63+) records 0
+  const y63 = retired.yearlyWithdrawals.find(w => w.age === 63);
+  if (y63) {
+    assertApprox(y63.conversionAmount, 0, 0.01, 'No conversion outside plan window');
+  }
+}
+
+function testRothConversionEmptyParity(): void {
+  section('ROTH CONVERSION — Empty plans regression parity');
+
+  const profile: Profile = {
+    country: 'US', currentAge: 35, retirementAge: 65, lifeExpectancy: 90,
+    region: 'CA', filingStatus: 'married_filing_jointly', stateTaxRate: 0.05,
+    annualIncome: 100_000, incomeGrowthRate: 0.03,
+  };
+  const assumptions: Assumptions = {
+    inflationRate: 0.03, safeWithdrawalRate: 0.04, retirementReturnRate: 0.05,
+  };
+  const accounts: Account[] = [
+    { id: 'a', name: '401k', type: 'traditional_401k',
+      balance: 100_000, annualContribution: 10_000, contributionGrowthRate: 0.02, returnRate: 0.07 },
+    { id: 'b', name: 'Roth', type: 'roth_ira',
+      balance: 20_000, annualContribution: 5_000, contributionGrowthRate: 0, returnRate: 0.07 },
+  ];
+
+  const accumA = calculateAccumulation(accounts, profile, usConfig, assumptions, []);
+  const accumB = calculateAccumulation(accounts, profile, usConfig, assumptions);
+  assertApprox(accumA.totalAtRetirement, accumB.totalAtRetirement, 0.01,
+    'Empty plans = omitted plans (parity)');
+  assertApprox(accumA.lifetimeConversionTaxCost, 0, 0.01,
+    'Empty plans → zero conversion tax cost');
+  assert(accumA.conversionsByYear.length === 0, 'Empty plans → no conversion years recorded');
+
+  const retA = calculateWithdrawals(accounts, profile, assumptions, accumA, usConfig, [], []);
+  const retB = calculateWithdrawals(accounts, profile, assumptions, accumB, usConfig, []);
+  assertApprox(retA.lifetimeTaxesPaid, retB.lifetimeTaxesPaid, 0.01,
+    'Empty plans path matches no-plans path lifetime taxes');
+
+  // Verify a non-empty plan actually increases the *year-of-conversion* tax.
+  // We compare the same age's federalTax with vs without the plan. This guards
+  // against a regression where conversionAmount is recorded but not added to
+  // ordinaryIncome. (We do NOT compare lifetimeTaxesPaid, because shifting tax
+  // from later RMD-driven income to earlier conversion-year income can reduce
+  // lifetime taxes — that's the whole point of a conversion ladder.)
+  const plansForTaxImpact: ConversionPlan[] = [{
+    id: 'tx', name: 'tax-impact-test',
+    sourceAccountId: 'a', destinationAccountId: 'b',
+    startAge: 65, endAge: 65, yearlyAmount: 30_000,
+  }];
+  const accumWith = calculateAccumulation(accounts, profile, usConfig, assumptions, plansForTaxImpact);
+  const retWith = calculateWithdrawals(accounts, profile, assumptions, accumWith, usConfig, [], plansForTaxImpact);
+  const y65With = retWith.yearlyWithdrawals.find(y => y.age === 65);
+  const y65Without = retA.yearlyWithdrawals.find(y => y.age === 65);
+  assert(
+    y65With !== undefined && y65Without !== undefined,
+    'Both runs have age-65 entries'
+  );
+  if (y65With && y65Without) {
+    assert(
+      y65With.conversionAmount > 0,
+      `Year 65 conversion is recorded (got ${y65With.conversionAmount.toFixed(0)})`
+    );
+    assert(
+      y65With.federalTax > y65Without.federalTax,
+      `Conversion year federal tax is higher with plan (${y65With.federalTax.toFixed(0)} > ${y65Without.federalTax.toFixed(0)})`
+    );
+  }
+}
+
+function testRothConversionLifetimeDelta(): void {
+  section('ROTH CONVERSION — Lifetime tax delta');
+
+  // We compute "with" and "without" by calling the engine directly here, so we're
+  // confirming the same arithmetic the hook will perform.
+  const profile: Profile = {
+    country: 'US', currentAge: 55, retirementAge: 60, lifeExpectancy: 90,
+    region: 'CA', filingStatus: 'married_filing_jointly', stateTaxRate: 0.05,
+    annualIncome: 50_000, incomeGrowthRate: 0,
+  };
+  const assumptions: Assumptions = {
+    inflationRate: 0.02, safeWithdrawalRate: 0.04, retirementReturnRate: 0.05,
+  };
+  const accounts: Account[] = [
+    { id: 'src', name: 'Trad IRA', type: 'traditional_ira',
+      balance: 1_500_000, annualContribution: 0, contributionGrowthRate: 0, returnRate: 0.06,
+      withdrawalRules: { startAge: 60 } },
+    { id: 'dst', name: 'Roth IRA', type: 'roth_ira',
+      balance: 0, annualContribution: 0, contributionGrowthRate: 0, returnRate: 0.06,
+      withdrawalRules: { startAge: 60 } },
+  ];
+  const plans: ConversionPlan[] = [{
+    id: 'p', name: 'ladder', sourceAccountId: 'src', destinationAccountId: 'dst',
+    startAge: 60, endAge: 72, yearlyAmount: 50_000,
+  }];
+
+  const accumWith = calculateAccumulation(accounts, profile, usConfig, assumptions, plans);
+  const accumWithout = calculateAccumulation(accounts, profile, usConfig, assumptions, []);
+  const retWith = calculateWithdrawals(accounts, profile, assumptions, accumWith, usConfig, [], plans);
+  const retWithout = calculateWithdrawals(accounts, profile, assumptions, accumWithout, usConfig, [], []);
+
+  const expectedDelta =
+    (retWith.lifetimeTaxesPaid + accumWith.lifetimeConversionTaxCost)
+    - retWithout.lifetimeTaxesPaid;
+
+  // Sanity: with-side has nonzero conversions in retirement
+  const anyConversion = retWith.yearlyWithdrawals.some(y => y.conversionAmount > 0);
+  assert(anyConversion, 'With-side simulation includes in-retirement conversions');
+
+  // The delta must be a finite number; sign depends on configured scenario.
+  assert(Number.isFinite(expectedDelta), 'Lifetime tax delta is finite');
+
+  // Boundary regression: a plan with startAge == retirementAge must NOT be
+  // double-counted (accumulation phase ends at age==retirementAge but the
+  // conversion at that age belongs to retirement, not accumulation).
+  const profileBoundary: Profile = {
+    country: 'US', currentAge: 55, retirementAge: 60, lifeExpectancy: 80,
+    region: 'CA', filingStatus: 'married_filing_jointly', stateTaxRate: 0.05,
+    annualIncome: 50_000, incomeGrowthRate: 0,
+  };
+  const accountsBoundary: Account[] = [
+    { id: 's', name: 'Trad', type: 'traditional_ira',
+      balance: 500_000, annualContribution: 0, contributionGrowthRate: 0, returnRate: 0,
+      withdrawalRules: { startAge: 60 } },
+    { id: 'd', name: 'Roth', type: 'roth_ira',
+      balance: 0, annualContribution: 0, contributionGrowthRate: 0, returnRate: 0,
+      withdrawalRules: { startAge: 60 } },
+  ];
+  const boundaryPlan: ConversionPlan[] = [{
+    id: 'b', name: 'boundary', sourceAccountId: 's', destinationAccountId: 'd',
+    startAge: 60, endAge: 60, yearlyAmount: 30_000,
+  }];
+  const flatAssumptions: Assumptions = {
+    inflationRate: 0, safeWithdrawalRate: 0.04, retirementReturnRate: 0,
+  };
+  const accumBoundary = calculateAccumulation(accountsBoundary, profileBoundary, usConfig, flatAssumptions, boundaryPlan);
+  const retBoundary = calculateWithdrawals(accountsBoundary, profileBoundary, flatAssumptions, accumBoundary, usConfig, [], boundaryPlan);
+  // Conversion fires once, in retirement (not accumulation).
+  assertApprox(accumBoundary.lifetimeConversionTaxCost, 0, 0.01,
+    'startAge==retirementAge: accumulation phase records no conversion (retirement owns it)');
+  const yBoundary = retBoundary.yearlyWithdrawals.find(y => y.age === 60);
+  if (yBoundary) {
+    assertApprox(yBoundary.conversionAmount, 30_000, 0.01,
+      'startAge==retirementAge: retirement phase records exactly $30k (not $60k from double-firing)');
+  }
+}
+
+import { rateForAge, validateBuckets } from '../utils/swrBuckets';
+
+function testSwrBucketsRateForAge(): void {
+  section('SWR BUCKETS — rateForAge');
+
+  const buckets: SwrBucket[] = [
+    { id: 'a', startAge: 63, endAge: 70, rate: 0.07 },
+    { id: 'b', startAge: 71, endAge: 77, rate: 0.06 },
+    { id: 'c', startAge: 78, endAge: 90, rate: 0.05 },
+  ];
+  const fallback = 0.04;
+
+  // Inside-bucket lookups
+  assertApprox(rateForAge(63, buckets, fallback), 0.07, 1e-9, 'startAge 63 hits first bucket');
+  assertApprox(rateForAge(70, buckets, fallback), 0.07, 1e-9, 'endAge 70 hits first bucket');
+  assertApprox(rateForAge(71, buckets, fallback), 0.06, 1e-9, 'startAge 71 hits second bucket');
+  assertApprox(rateForAge(77, buckets, fallback), 0.06, 1e-9, 'endAge 77 hits second bucket');
+  assertApprox(rateForAge(85, buckets, fallback), 0.05, 1e-9, 'mid third bucket');
+
+  // Outside any bucket → fallback
+  assertApprox(rateForAge(60, buckets, fallback), fallback, 1e-9, 'before first bucket → fallback');
+  assertApprox(rateForAge(95, buckets, fallback), fallback, 1e-9, 'after last bucket → fallback');
+
+  // Gap year (between buckets)
+  const gappy: SwrBucket[] = [
+    { id: 'g1', startAge: 63, endAge: 70, rate: 0.07 },
+    { id: 'g2', startAge: 75, endAge: 80, rate: 0.05 },
+  ];
+  assertApprox(rateForAge(72, gappy, fallback), fallback, 1e-9, 'gap year (72) → fallback');
+
+  // Empty buckets list → always fallback
+  assertApprox(rateForAge(65, [], fallback), fallback, 1e-9, 'empty buckets → fallback');
+}
+
+function testSwrBucketsValidate(): void {
+  section('SWR BUCKETS — validateBuckets');
+
+  // Empty list → no errors
+  const empty = validateBuckets([]);
+  assert(Object.keys(empty.errors).length === 0, 'Empty list produces no errors');
+
+  // Valid non-overlapping buckets → no errors
+  const valid: SwrBucket[] = [
+    { id: 'a', startAge: 63, endAge: 70, rate: 0.07 },
+    { id: 'b', startAge: 71, endAge: 77, rate: 0.06 },
+    { id: 'c', startAge: 78, endAge: 90, rate: 0.05 },
+  ];
+  const validResult = validateBuckets(valid);
+  assert(Object.keys(validResult.errors).length === 0,
+    `Three non-overlapping buckets produce no errors (got ${JSON.stringify(validResult.errors)})`);
+
+  // Inverted range → error on offending bucket index
+  const inverted: SwrBucket[] = [
+    { id: 'x', startAge: 70, endAge: 63, rate: 0.07 },
+  ];
+  const invertedResult = validateBuckets(inverted);
+  assert(invertedResult.errors[0]?.length > 0, 'Inverted range produces error on index 0');
+  assert(
+    invertedResult.errors[0].some(e => e.toLowerCase().includes('end age') || e.toLowerCase().includes('endage')),
+    'Inverted range error message mentions end age'
+  );
+
+  // Overlap → error on both overlapping indices
+  const overlap: SwrBucket[] = [
+    { id: 'p', startAge: 63, endAge: 70, rate: 0.07 },
+    { id: 'q', startAge: 68, endAge: 75, rate: 0.06 },
+  ];
+  const overlapResult = validateBuckets(overlap);
+  assert(overlapResult.errors[0]?.length > 0, 'Overlap reports error on first overlapping bucket');
+  assert(overlapResult.errors[1]?.length > 0, 'Overlap reports error on second overlapping bucket');
+  assert(
+    overlapResult.errors[0].some(e => e.toLowerCase().includes('overlap')),
+    'Overlap error message mentions overlap'
+  );
+
+  // Single-year bucket is valid
+  const singleYear: SwrBucket[] = [
+    { id: 's', startAge: 65, endAge: 65, rate: 0.05 },
+  ];
+  const singleResult = validateBuckets(singleYear);
+  assert(Object.keys(singleResult.errors).length === 0, 'Single-year bucket (start==end) is valid');
+
+  // Non-positive rate → error
+  const zeroRate: SwrBucket[] = [
+    { id: 'z', startAge: 60, endAge: 70, rate: 0 },
+  ];
+  const zeroResult = validateBuckets(zeroRate);
+  assert(zeroResult.errors[0]?.length > 0, 'Rate of 0 produces error');
+}
+
+function testSwrBucketsWithdrawals(): void {
+  section('SWR BUCKETS — Withdrawal integration');
+
+  // Common scenario: simple retirement with one source account
+  const baseProfile: Profile = {
+    country: 'US',
+    currentAge: 60,
+    retirementAge: 60,
+    lifeExpectancy: 75,
+    region: 'CA',
+    filingStatus: 'married_filing_jointly',
+    stateTaxRate: 0.05,
+  };
+  const baseAssumptions: Assumptions = {
+    inflationRate: 0.03,
+    safeWithdrawalRate: 0.04,
+    retirementReturnRate: 0.05,
+  };
+  const accounts: Account[] = [
+    { id: 'a', name: 'Roth', type: 'roth_ira',
+      balance: 500_000, annualContribution: 0, contributionGrowthRate: 0, returnRate: 0.05,
+      withdrawalRules: { startAge: 60 } },
+  ];
+  const accumulation = calculateAccumulation(accounts, baseProfile, usConfig);
+
+  // Test 1: Empty buckets → identical to no buckets at all (regression parity)
+  const noBuckets = calculateWithdrawals(accounts, baseProfile, baseAssumptions, accumulation, usConfig);
+  const emptyBuckets = calculateWithdrawals(
+    accounts, baseProfile, { ...baseAssumptions, swrBuckets: [] }, accumulation, usConfig,
+  );
+  assertApprox(noBuckets.lifetimeTaxesPaid, emptyBuckets.lifetimeTaxesPaid, 0.01,
+    'Empty swrBuckets behaves identically to no swrBuckets');
+  for (let i = 0; i < noBuckets.yearlyWithdrawals.length; i++) {
+    assertApprox(
+      noBuckets.yearlyWithdrawals[i].targetSpending,
+      emptyBuckets.yearlyWithdrawals[i].targetSpending,
+      0.01,
+      `Year ${i}: targetSpending matches between no-buckets and empty-buckets`,
+    );
+  }
+
+  // Test 2: Single bucket covering full retirement at rate R == setting safeWithdrawalRate to R
+  const singleBucketAssumptions: Assumptions = {
+    ...baseAssumptions,
+    swrBuckets: [{ id: 'all', startAge: 60, endAge: 75, rate: 0.06 }],
+  };
+  const altSwrAssumptions: Assumptions = { ...baseAssumptions, safeWithdrawalRate: 0.06 };
+  const singleBucketRun = calculateWithdrawals(accounts, baseProfile, singleBucketAssumptions, accumulation, usConfig);
+  const altSwrRun = calculateWithdrawals(accounts, baseProfile, altSwrAssumptions, accumulation, usConfig);
+  for (let i = 0; i < singleBucketRun.yearlyWithdrawals.length; i++) {
+    assertApprox(
+      singleBucketRun.yearlyWithdrawals[i].targetSpending,
+      altSwrRun.yearlyWithdrawals[i].targetSpending,
+      0.01,
+      `Year ${i}: full-coverage bucket at 6% matches global SWR=6%`,
+    );
+  }
+
+  // Test 3: Three-bucket scenario — per-year targetSpending matches the formula exactly
+  const threeBuckets: SwrBucket[] = [
+    { id: 'go', startAge: 60, endAge: 65, rate: 0.07 },
+    { id: 'mid', startAge: 66, endAge: 70, rate: 0.06 },
+    { id: 'low', startAge: 71, endAge: 75, rate: 0.05 },
+  ];
+  const threeBucketRun = calculateWithdrawals(
+    accounts, baseProfile,
+    { ...baseAssumptions, swrBuckets: threeBuckets },
+    accumulation, usConfig,
+  );
+  const initialPortfolio = accumulation.totalAtRetirement;
+  for (const year of threeBucketRun.yearlyWithdrawals) {
+    const yearsFromRetirement = year.age - baseProfile.retirementAge;
+    const inflationFactor = Math.pow(1 + baseAssumptions.inflationRate, yearsFromRetirement);
+    const expectedRate =
+      year.age <= 65 ? 0.07 :
+      year.age <= 70 ? 0.06 :
+      0.05;
+    const expected = initialPortfolio * expectedRate * inflationFactor;
+    assertApprox(year.targetSpending, expected, 0.01,
+      `Age ${year.age}: targetSpending = portfolio × ${expectedRate} × (1 + inf)^${yearsFromRetirement}`);
+  }
+
+  // Test 4: Gap year — age inside the gap uses the global SWR
+  const gappy: SwrBucket[] = [
+    { id: 'a', startAge: 60, endAge: 65, rate: 0.07 },
+    { id: 'b', startAge: 70, endAge: 75, rate: 0.05 },
+  ];
+  const gapRun = calculateWithdrawals(
+    accounts, baseProfile,
+    { ...baseAssumptions, swrBuckets: gappy },
+    accumulation, usConfig,
+  );
+  const gapYear = gapRun.yearlyWithdrawals.find(y => y.age === 67);
+  assert(gapYear !== undefined, 'Gap-year scenario contains an age 67 entry');
+  if (gapYear) {
+    const yearsFromRetirement = 67 - baseProfile.retirementAge;
+    const expected = initialPortfolio * baseAssumptions.safeWithdrawalRate
+      * Math.pow(1 + baseAssumptions.inflationRate, yearsFromRetirement);
+    assertApprox(gapYear.targetSpending, expected, 0.01,
+      'Age 67 (in gap) uses global safeWithdrawalRate');
+  }
+
+  // Test 5: Boundary inclusivity — startAge and endAge both inside the bucket
+  const adjacent: SwrBucket[] = [
+    { id: 'x', startAge: 60, endAge: 65, rate: 0.07 },
+    { id: 'y', startAge: 66, endAge: 70, rate: 0.06 },
+  ];
+  const adjRun = calculateWithdrawals(
+    accounts, baseProfile,
+    { ...baseAssumptions, swrBuckets: adjacent },
+    accumulation, usConfig,
+  );
+  const age65 = adjRun.yearlyWithdrawals.find(y => y.age === 65);
+  const age66 = adjRun.yearlyWithdrawals.find(y => y.age === 66);
+  if (age65 && age66) {
+    const inflFactor65 = Math.pow(1 + baseAssumptions.inflationRate, 65 - 60);
+    const inflFactor66 = Math.pow(1 + baseAssumptions.inflationRate, 66 - 60);
+    assertApprox(age65.targetSpending, initialPortfolio * 0.07 * inflFactor65, 0.01,
+      'Age 65 (endAge) uses first bucket rate (0.07)');
+    assertApprox(age66.targetSpending, initialPortfolio * 0.06 * inflFactor66, 0.01,
+      'Age 66 (startAge of second) uses second bucket rate (0.06)');
+  }
+}
+
+function testBracketFillAdjustment(): void {
+  section('BRACKET-FILL ADJUSTMENT DIAL');
+
+  // Setup: single filer, age 65 (post-retirement, pre-RMD), no income streams,
+  // no government benefits, zero return + zero inflation. Two accounts:
+  // $750k Traditional + $750k Roth → portfolio $1.5M, SWR 0.08 → spending $120k/yr.
+  // Default ceiling = std_ded ($14,600) + bracket12Max ($47,150) = $61,750.
+  // Spending need ($120k) exceeds the default ceiling, so the dial's effect
+  // is fully visible: every dollar added to the ceiling shifts $1 from Roth
+  // to Traditional.
+  const traditional: Account = {
+    id: 'trad',
+    name: 'Traditional 401k',
+    type: 'traditional_401k',
+    balance: 750_000,
+    annualContribution: 0,
+    contributionGrowthRate: 0,
+    returnRate: 0,
+  };
+  const roth: Account = {
+    id: 'roth',
+    name: 'Roth IRA',
+    type: 'roth_ira',
+    balance: 750_000,
+    annualContribution: 0,
+    contributionGrowthRate: 0,
+    returnRate: 0,
+  };
+
+  const profile: Profile = {
+    country: 'US',
+    currentAge: 65,
+    retirementAge: 65,
+    lifeExpectancy: 70,
+    region: 'TX', // no-tax state; stateTaxRate=0 anyway
+    filingStatus: 'single',
+    stateTaxRate: 0,
+  };
+
+  const baseAssumptions: Assumptions = {
+    inflationRate: 0,
+    safeWithdrawalRate: 0.08,
+    retirementReturnRate: 0,
+  };
+
+  const accum = calculateAccumulation([traditional, roth], profile, usConfig);
+
+  console.log('\n--- Positive adjustment (+50%) shifts withdrawal from Roth to Traditional ---');
+
+  const resultPlus = calculateWithdrawals(
+    [traditional, roth],
+    profile,
+    { ...baseAssumptions, bracketFillAdjustment: 0.5 },
+    accum,
+    usConfig,
+  );
+  const yPlus65 = resultPlus.yearlyWithdrawals.find(y => y.age === 65);
+  assert(yPlus65 !== undefined, 'Year 65 record exists for +0.5 run');
+
+  if (yPlus65) {
+    // Adjusted ceiling = 14,600 + 47,150 × 1.5 = 85,325. Need = 120,000.
+    // Step 2 fills Traditional with min(85,325, 120,000) = 85,325.
+    // Step 3 Roth fills 120,000 − 85,325 = 34,675.
+    assertApprox(
+      yPlus65.withdrawals['trad'],
+      85_325,
+      0.5,
+      '+0.5 adjustment: Traditional withdrawal = std_ded + bracket12Max × 1.5'
+    );
+    assertApprox(
+      yPlus65.withdrawals['roth'],
+      34_675,
+      0.5,
+      '+0.5 adjustment: Roth absorbs only the residual'
+    );
+  }
+
+  console.log('\n--- Parity: adjustment=0 matches no-adjustment baseline ---');
+
+  const resultZero = calculateWithdrawals(
+    [traditional, roth],
+    profile,
+    { ...baseAssumptions, bracketFillAdjustment: 0 },
+    accum,
+    usConfig,
+  );
+  const resultBaseline = calculateWithdrawals(
+    [traditional, roth],
+    profile,
+    baseAssumptions, // no bracketFillAdjustment field at all
+    accum,
+    usConfig,
+  );
+  const yZero65 = resultZero.yearlyWithdrawals.find(y => y.age === 65);
+  const yBase65 = resultBaseline.yearlyWithdrawals.find(y => y.age === 65);
+  assert(yZero65 !== undefined && yBase65 !== undefined, 'Both runs produced age-65 records');
+
+  if (yZero65 && yBase65) {
+    assertApprox(
+      yZero65.withdrawals['trad'],
+      yBase65.withdrawals['trad'],
+      0.01,
+      'Parity: adjustment=0 matches missing field for Traditional'
+    );
+    assertApprox(
+      yZero65.withdrawals['roth'],
+      yBase65.withdrawals['roth'],
+      0.01,
+      'Parity: adjustment=0 matches missing field for Roth'
+    );
+    // Also verify the default ceiling produces the expected $61,750 fill.
+    assertApprox(
+      yZero65.withdrawals['trad'],
+      61_750,
+      0.5,
+      'Default ceiling: Traditional fill = std_ded ($14,600) + bracket12Max ($47,150)'
+    );
+  }
+
+  console.log('\n--- Negative adjustment (-100%) collapses ceiling to standard deduction ---');
+
+  const resultMinus = calculateWithdrawals(
+    [traditional, roth],
+    profile,
+    { ...baseAssumptions, bracketFillAdjustment: -1.0 },
+    accum,
+    usConfig,
+  );
+  const yMinus65 = resultMinus.yearlyWithdrawals.find(y => y.age === 65);
+  assert(yMinus65 !== undefined, 'Year 65 record exists for -1.0 run');
+
+  if (yMinus65) {
+    // Adjusted ceiling = 14,600 + 47,150 × 0 = 14,600 (std deduction only).
+    // Step 2 fills Traditional with min(14,600, 120,000) = 14,600.
+    // Step 3 Roth fills 120,000 − 14,600 = 105,400.
+    assertApprox(
+      yMinus65.withdrawals['trad'],
+      14_600,
+      0.5,
+      '-1.0 adjustment: Traditional fill collapses to std deduction only'
+    );
+    assertApprox(
+      yMinus65.withdrawals['roth'],
+      105_400,
+      0.5,
+      '-1.0 adjustment: Roth absorbs the rest'
+    );
+  }
+
+  console.log('\n--- Canada ignores the dial ---');
+
+  const traditionalCA: Account = {
+    id: 'rrsp',
+    name: 'RRSP',
+    type: 'rrsp',
+    balance: 750_000,
+    annualContribution: 0,
+    contributionGrowthRate: 0,
+    returnRate: 0,
+  };
+  const rothCA: Account = {
+    id: 'tfsa',
+    name: 'TFSA',
+    type: 'tfsa',
+    balance: 750_000,
+    annualContribution: 0,
+    contributionGrowthRate: 0,
+    returnRate: 0,
+  };
+  const profileCA: Profile = {
+    country: 'CA',
+    currentAge: 65,
+    retirementAge: 65,
+    lifeExpectancy: 70,
+    region: 'ON',
+    stateTaxRate: 0,
+  };
+  const accumCA = calculateAccumulation([traditionalCA, rothCA], profileCA, caConfig);
+
+  const resultCAWithDial = calculateWithdrawals(
+    [traditionalCA, rothCA],
+    profileCA,
+    { ...baseAssumptions, bracketFillAdjustment: 0.5 },
+    accumCA,
+    caConfig,
+  );
+  const resultCABaseline = calculateWithdrawals(
+    [traditionalCA, rothCA],
+    profileCA,
+    baseAssumptions,
+    accumCA,
+    caConfig,
+  );
+  const yCAWith65 = resultCAWithDial.yearlyWithdrawals.find(y => y.age === 65);
+  const yCABase65 = resultCABaseline.yearlyWithdrawals.find(y => y.age === 65);
+  assert(yCAWith65 !== undefined && yCABase65 !== undefined, 'Both Canadian runs produced age-65 records');
+
+  if (yCAWith65 && yCABase65) {
+    assertApprox(
+      yCAWith65.withdrawals['rrsp'],
+      yCABase65.withdrawals['rrsp'],
+      0.01,
+      'Canada ignores dial: RRSP withdrawal unchanged with adjustment=+0.5'
+    );
+    assertApprox(
+      yCAWith65.withdrawals['tfsa'],
+      yCABase65.withdrawals['tfsa'],
+      0.01,
+      'Canada ignores dial: TFSA withdrawal unchanged with adjustment=+0.5'
+    );
+  }
+
+  console.log('\n--- Country-gate fix: stale profile.country="US" with caConfig ignores dial ---');
+
+  // Regression for commit 5a806f7: when profile.country is stale (e.g., a user
+  // switches US→Canada but profile.country wasn't updated by the country-switch
+  // flow), the engine must gate on countryConfig?.code, not profile.country.
+  // Otherwise a non-zero bracketFillAdjustment in saved assumptions leaks into
+  // the Canadian path.
+  const staleUSProfile: Profile = {
+    country: 'US', // stale — the user has switched to Canada but this field wasn't reset
+    currentAge: 65,
+    retirementAge: 65,
+    lifeExpectancy: 70,
+    region: 'ON',
+    stateTaxRate: 0,
+  };
+  const accumStale = calculateAccumulation([traditionalCA, rothCA], staleUSProfile, caConfig);
+
+  const resultStaleWith = calculateWithdrawals(
+    [traditionalCA, rothCA],
+    staleUSProfile,
+    { ...baseAssumptions, bracketFillAdjustment: 0.5 },
+    accumStale,
+    caConfig,
+  );
+  const resultStaleBaseline = calculateWithdrawals(
+    [traditionalCA, rothCA],
+    staleUSProfile,
+    baseAssumptions,
+    accumStale,
+    caConfig,
+  );
+  const yStaleWith65 = resultStaleWith.yearlyWithdrawals.find(y => y.age === 65);
+  const yStaleBase65 = resultStaleBaseline.yearlyWithdrawals.find(y => y.age === 65);
+  assert(yStaleWith65 !== undefined && yStaleBase65 !== undefined, 'Stale-profile runs produced age-65 records');
+
+  if (yStaleWith65 && yStaleBase65) {
+    assertApprox(
+      yStaleWith65.withdrawals['rrsp'],
+      yStaleBase65.withdrawals['rrsp'],
+      0.01,
+      'Stale profile.country="US" + caConfig: RRSP unchanged with dial=+0.5'
+    );
+    assertApprox(
+      yStaleWith65.withdrawals['tfsa'],
+      yStaleBase65.withdrawals['tfsa'],
+      0.01,
+      'Stale profile.country="US" + caConfig: TFSA unchanged with dial=+0.5'
+    );
+  }
+}
+
+// =============================================================================
+// INCOME STREAM FLAGS — fixedPayment + applySSReduction
+// =============================================================================
+
+function testIncomeStreamFlags(): void {
+  section('INCOME STREAM FLAGS — fixedPayment + applySSReduction');
+
+  const account: Account = {
+    id: 'a',
+    name: 'Trad',
+    type: 'traditional_401k',
+    balance: 5_000_000,
+    annualContribution: 0,
+    contributionGrowthRate: 0,
+    returnRate: 0,
+  };
+  const baseProfile: Profile = {
+    country: 'US',
+    currentAge: 50,
+    retirementAge: 70,
+    lifeExpectancy: 80,
+    region: 'TX',
+    filingStatus: 'single',
+    stateTaxRate: 0,
+  };
+  const inflationAssumptions: Assumptions = {
+    inflationRate: 0.03,
+    safeWithdrawalRate: 0.04,
+    retirementReturnRate: 0,
+  };
+
+  console.log('\n--- fixedPayment annuity stays flat across all retirement years ---');
+
+  // currentAge=50 → at age 70 (first retirement year), yearsFromNow=20.
+  // Without fixedPayment, the $36k/yr would be inflated 20 years (~$65k);
+  // WITH fixedPayment, it should stay $36k every year.
+  const fixedPensionStream: IncomeStream = {
+    id: 'fix',
+    name: 'Fixed Annuity',
+    monthlyAmount: 3000,    // $36k/yr nominal
+    startAge: 70,
+    taxTreatment: 'fully_taxable',
+    fixedPayment: true,
+  };
+  const accumFix = calculateAccumulation([account], baseProfile, usConfig);
+  const resultFix = calculateWithdrawals(
+    [account], baseProfile, inflationAssumptions, accumFix, usConfig, [fixedPensionStream],
+  );
+  const fix70 = resultFix.yearlyWithdrawals.find(y => y.age === 70);
+  const fix75 = resultFix.yearlyWithdrawals.find(y => y.age === 75);
+  assert(fix70 !== undefined && fix75 !== undefined, 'fixed-pension run produced age-70 and age-75 records');
+
+  if (fix70 && fix75) {
+    assertApprox(
+      fix70.incomeStreamIncome, 36_000, 0.5,
+      'fixedPayment=true at age 70 (year 20): annual = monthly × 12 with no inflation'
+    );
+    assertApprox(
+      fix75.incomeStreamIncome, 36_000, 0.5,
+      'fixedPayment=true at age 75 (year 25): still $36k flat'
+    );
+  }
+
+  console.log('\n--- Same stream WITHOUT fixedPayment inflates from currentAge ---');
+
+  const inflatedPensionStream: IncomeStream = {
+    ...fixedPensionStream,
+    id: 'infl',
+    fixedPayment: false,
+  };
+  const resultInfl = calculateWithdrawals(
+    [account], baseProfile, inflationAssumptions, accumFix, usConfig, [inflatedPensionStream],
+  );
+  const infl70 = resultInfl.yearlyWithdrawals.find(y => y.age === 70);
+  if (infl70) {
+    const expected = 36_000 * Math.pow(1.03, 20);
+    assertApprox(
+      infl70.incomeStreamIncome, expected, 0.5,
+      `fixedPayment=false at age 70: $36k × 1.03^20 ≈ $${expected.toFixed(0)}`
+    );
+    assert(
+      infl70.incomeStreamIncome > 60_000,
+      `default-inflated stream is meaningfully larger than fixed (got $${infl70.incomeStreamIncome.toFixed(0)})`
+    );
+  }
+
+  console.log('\n--- SS underfunding: applySSReduction kicks in at calendar year 2032 ---');
+
+  // Test against the actual calendar year of each yearly record (robust against
+  // running these tests at various clock times). With inflationRate=0 the SS
+  // amount is just $30k flat before 2032, $25.5k from 2032 onward.
+  const ssProfile: Profile = {
+    country: 'US',
+    currentAge: 65,
+    retirementAge: 65,
+    lifeExpectancy: 80,
+    region: 'TX',
+    filingStatus: 'single',
+    stateTaxRate: 0,
+  };
+  const flatAssumptions: Assumptions = {
+    inflationRate: 0,
+    safeWithdrawalRate: 0.04,
+    retirementReturnRate: 0,
+  };
+  const ssStream: IncomeStream = {
+    id: 'ss',
+    name: 'SS',
+    monthlyAmount: 2500,    // $30k/yr
+    startAge: 65,
+    taxTreatment: 'social_security',
+    applySSReduction: true,
+  };
+  const accumSS = calculateAccumulation([account], ssProfile, usConfig);
+  const resultSS = calculateWithdrawals(
+    [account], ssProfile, flatAssumptions, accumSS, usConfig, [ssStream],
+  );
+
+  const before = resultSS.yearlyWithdrawals.find(y => y.year === 2031);
+  const at = resultSS.yearlyWithdrawals.find(y => y.year === 2032);
+  const after = resultSS.yearlyWithdrawals.find(y => y.year === 2033);
+
+  if (before) {
+    assertApprox(
+      before.incomeStreamIncome, 30_000, 0.5,
+      'Year 2031 (pre-cutoff): SS pays full $30k'
+    );
+  }
+  if (at) {
+    assertApprox(
+      at.incomeStreamIncome, 25_500, 0.5,
+      'Year 2032 (cutoff year): SS reduced 15% to $25.5k'
+    );
+  }
+  if (after) {
+    assertApprox(
+      after.incomeStreamIncome, 25_500, 0.5,
+      'Year 2033 (post-cutoff): SS still reduced to $25.5k'
+    );
+  }
+
+  console.log('\n--- Multi-stream: fixed annuity stays flat alongside an inflated SS stream ---');
+
+  // Regression for the per-stream display: previously the table split the
+  // total by monthlyAmount ratios, which re-inflated fixed-payment streams.
+  // Now the engine populates incomeStreamByStream so the display can read
+  // each stream's actual nominal amount that year.
+  const annuityStream: IncomeStream = {
+    id: 'ann',
+    name: 'Annuity',
+    monthlyAmount: 1000,    // $12k/yr fixed
+    startAge: 65,
+    taxTreatment: 'fully_taxable',
+    fixedPayment: true,
+  };
+  const ssInflated: IncomeStream = {
+    id: 'ssi',
+    name: 'SS',
+    monthlyAmount: 2000,    // $24k/yr today's $
+    startAge: 65,
+    taxTreatment: 'social_security',
+  };
+  const multiProfile: Profile = {
+    country: 'US',
+    currentAge: 65,
+    retirementAge: 65,
+    lifeExpectancy: 75,
+    region: 'TX',
+    filingStatus: 'single',
+    stateTaxRate: 0,
+  };
+  const accumMulti = calculateAccumulation([account], multiProfile, usConfig);
+  const resultMulti = calculateWithdrawals(
+    [account], multiProfile, inflationAssumptions, accumMulti, usConfig, [annuityStream, ssInflated],
+  );
+  const m65 = resultMulti.yearlyWithdrawals.find(y => y.age === 65);
+  const m70 = resultMulti.yearlyWithdrawals.find(y => y.age === 70);
+  if (m65 && m70) {
+    assertApprox(
+      m65.incomeStreamByStream['ann'], 12_000, 0.5,
+      'Multi-stream age 65: annuity = $12k flat (fixedPayment)'
+    );
+    assertApprox(
+      m70.incomeStreamByStream['ann'], 12_000, 0.5,
+      'Multi-stream age 70: annuity STILL $12k flat despite 5 years of inflation'
+    );
+    assertApprox(
+      m65.incomeStreamByStream['ssi'], 24_000, 0.5,
+      'Multi-stream age 65: SS = $24k (year 0, no inflation yet)'
+    );
+    const expectedSS70 = 24_000 * Math.pow(1.03, 5);
+    assertApprox(
+      m70.incomeStreamByStream['ssi'], expectedSS70, 1.0,
+      `Multi-stream age 70: SS = $24k × 1.03^5 ≈ $${expectedSS70.toFixed(0)} (inflated)`
+    );
+  }
+
+  console.log('\n--- SS-reduction flag has no effect when taxTreatment is not social_security ---');
+
+  // applySSReduction=true on a pension stream should be IGNORED — the engine
+  // gates on taxTreatment === 'social_security' to prevent stale flags from
+  // misclassified streams from triggering cuts.
+  const misflaggedPension: IncomeStream = {
+    id: 'mp',
+    name: 'Pension (mistakenly flagged)',
+    monthlyAmount: 2500,
+    startAge: 65,
+    taxTreatment: 'fully_taxable',
+    applySSReduction: true,
+  };
+  const resultMP = calculateWithdrawals(
+    [account], ssProfile, flatAssumptions, accumSS, usConfig, [misflaggedPension],
+  );
+  const mp2032 = resultMP.yearlyWithdrawals.find(y => y.year === 2032);
+  if (mp2032) {
+    assertApprox(
+      mp2032.incomeStreamIncome, 30_000, 0.5,
+      'Year 2032: pension with applySSReduction=true is NOT reduced (treatment gate)'
+    );
+  }
+}
+
+// =============================================================================
+// FEDERAL BRACKET INDEXING TESTS
+// =============================================================================
+
+function testFederalBracketIndexing(): void {
+  section('FEDERAL BRACKET INDEXING (US-only, 50% of CPI/year)');
+
+  const traditional: Account = {
+    id: 'trad',
+    name: 'Traditional 401k',
+    type: 'traditional_401k',
+    balance: 2_000_000,
+    annualContribution: 0,
+    contributionGrowthRate: 0,
+    returnRate: 0,
+  };
+  const profileSingle: Profile = {
+    country: 'US',
+    currentAge: 65,
+    retirementAge: 65,
+    lifeExpectancy: 70,
+    region: 'TX',
+    filingStatus: 'single',
+    stateTaxRate: 0,
+  };
+
+  console.log('\n--- Parity: inflationRate=0 → multiplier=1 → matches direct tax fn ---');
+
+  const zeroInflationAssumptions: Assumptions = {
+    inflationRate: 0,
+    safeWithdrawalRate: 0.05,
+    retirementReturnRate: 0,
+  };
+  const accumZero = calculateAccumulation([traditional], profileSingle, usConfig);
+  const resultZero = calculateWithdrawals(
+    [traditional], profileSingle, zeroInflationAssumptions, accumZero, usConfig,
+  );
+  const y65Zero = resultZero.yearlyWithdrawals.find(y => y.age === 65);
+  assert(y65Zero !== undefined, 'inflation=0 run produced age-65 record');
+  if (y65Zero) {
+    // taxableOrdinaryIncome is now POST-std-deduction. Use calculateFederalIncomeTax
+    // directly (it operates on already-deducted income).
+    const expectedFed = calculateFederalIncomeTax(y65Zero.taxableOrdinaryIncome, 'single');
+    assertApprox(
+      y65Zero.federalTax, expectedFed, 0.5,
+      'inflation=0: federalTax matches calculateFederalIncomeTax(taxableOrdinaryIncome)'
+    );
+  }
+
+  console.log('\n--- Year 0 (age == currentAge) with 3% inflation → multiplier=1 ---');
+
+  const inflationAssumptions: Assumptions = {
+    inflationRate: 0.03,
+    safeWithdrawalRate: 0.05,
+    retirementReturnRate: 0,
+  };
+  const accumInfl = calculateAccumulation([traditional], profileSingle, usConfig);
+  const resultInfl = calculateWithdrawals(
+    [traditional], profileSingle, inflationAssumptions, accumInfl, usConfig,
+  );
+  const y65Infl = resultInfl.yearlyWithdrawals.find(y => y.age === 65);
+  assert(y65Infl !== undefined, 'inflation=0.03 run produced age-65 record');
+  if (y65Infl) {
+    // year 0: multiplier = 1, taxableOrdinaryIncome is post-deduction.
+    const expectedFed = calculateFederalIncomeTax(y65Infl.taxableOrdinaryIncome, 'single');
+    assertApprox(
+      y65Infl.federalTax, expectedFed, 0.5,
+      'year 0: yearsFromNow=0 → multiplier=1 → fed tax = calculateFederalIncomeTax(post-deduction income)'
+    );
+  }
+
+  console.log('\n--- Year 20 with 3% inflation → multiplier ≈ 1.347, fed tax = scale × tax(deflated) ---');
+
+  // currentAge=50, retirementAge=70 → age 70 is the FIRST retirement year (full
+  // $2M balance available). yearsFromNow = 20 → bracket multiplier ≈ 1.347.
+  const profileLong: Profile = {
+    country: 'US',
+    currentAge: 50,
+    retirementAge: 70,
+    lifeExpectancy: 75,
+    region: 'TX',
+    filingStatus: 'single',
+    stateTaxRate: 0,
+  };
+  const accumLong = calculateAccumulation([traditional], profileLong, usConfig);
+  const resultLong = calculateWithdrawals(
+    [traditional], profileLong, inflationAssumptions, accumLong, usConfig,
+  );
+  const y70 = resultLong.yearlyWithdrawals.find(y => y.age === 70);
+  assert(y70 !== undefined, 'long-horizon run produced age-70 record');
+  if (y70) {
+    assert(y70.taxableOrdinaryIncome > 0, `age 70 has nonzero taxable income (got ${y70.taxableOrdinaryIncome})`);
+    // yearsFromNow = 70 - 50 = 20; bracket multiplier = (1 + 0.5*0.03)^20 = 1.015^20
+    const m = Math.pow(1.015, 20);
+    // taxableOrdinaryIncome is now POST-std-deduction (indexed). For the
+    // deflate-compute-scale property, divide post-deduction income by m and
+    // run through calculateFederalIncomeTax (which doesn't subtract std ded again).
+    const expectedFed = calculateFederalIncomeTax(
+      y70.taxableOrdinaryIncome / m, 'single',
+    ) * m;
+    assertApprox(
+      y70.federalTax, expectedFed, 5.0,
+      `year 20 with 3% inflation: fed tax = ${m.toFixed(4)} × federalIncomeTax(post-ded income / ${m.toFixed(4)})`
+    );
+
+    // Sanity: indexed tax should be strictly less than the unindexed tax for the
+    // same nominal income (the brackets have stretched, lower marginal rate hits).
+    // Recover gross ordinaryIncome from the post-deduction column to evaluate the
+    // unindexed scenario via calculateTotalFederalTax (which subtracts the
+    // un-indexed std deduction internally).
+    const stdDedSingle = getStandardDeduction('single');
+    const ordinaryIncome = y70.taxableOrdinaryIncome + stdDedSingle * m;
+    const unindexedFed = calculateTotalFederalTax(ordinaryIncome, 0, 'single');
+    assert(
+      y70.federalTax < unindexedFed,
+      `Indexed federal tax (${y70.federalTax.toFixed(0)}) should be < unindexed (${unindexedFed.toFixed(0)})`
+    );
+  }
+
+  console.log('\n--- Bracket-fill ceiling tracks the multiplier ---');
+
+  // Big enough Roth balance to absorb spending-above-ceiling for 8+ years
+  // without depleting (otherwise step 6 fallback fires and trad withdrawal
+  // exceeds the ceiling).
+  const trad: Account = {
+    id: 'trad', name: 'T', type: 'traditional_401k',
+    balance: 2_000_000, annualContribution: 0, contributionGrowthRate: 0, returnRate: 0,
+  };
+  const roth: Account = {
+    id: 'roth', name: 'R', type: 'roth_ira',
+    balance: 2_000_000, annualContribution: 0, contributionGrowthRate: 0, returnRate: 0,
+  };
+  const profileBF: Profile = {
+    country: 'US',
+    currentAge: 60,
+    retirementAge: 60,
+    lifeExpectancy: 70,
+    region: 'TX',
+    filingStatus: 'single',
+    stateTaxRate: 0,
+  };
+  const bfAssumptions: Assumptions = {
+    inflationRate: 0.03,
+    safeWithdrawalRate: 0.05,        // moderate; spending exceeds ceiling but Roth covers the gap
+    retirementReturnRate: 0,
+  };
+  const accumBF = calculateAccumulation([trad, roth], profileBF, usConfig);
+  const resultBF = calculateWithdrawals(
+    [trad, roth], profileBF, bfAssumptions, accumBF, usConfig,
+  );
+  const y68 = resultBF.yearlyWithdrawals.find(y => y.age === 68);
+  assert(y68 !== undefined, 'bracket-fill run produced age-68 record (pre-RMD)');
+  if (y68) {
+    // age 68, currentAge 60 → yearsFromNow = 8; multiplier = (1.015)^8
+    const m = Math.pow(1.015, 8);
+    const indexedCeiling = (14600 + 47150) * m;
+    assertApprox(
+      y68.withdrawals['trad'], indexedCeiling, 5.0,
+      `Year 8: bracket-fill ceiling = ($14,600 + $47,150) × ${m.toFixed(4)} = $${indexedCeiling.toFixed(0)}`
+    );
+  }
+
+  console.log('\n--- Canada: bracket indexing does NOT apply ---');
+
+  // Mirror the US year-20 setup so age 70 is the first retirement year with
+  // the full balance, guaranteeing a nontrivial Canadian tax computation.
+  const rrsp: Account = {
+    id: 'rrsp', name: 'RRSP', type: 'rrsp',
+    balance: 2_000_000, annualContribution: 0, contributionGrowthRate: 0, returnRate: 0,
+  };
+  const profileCA: Profile = {
+    country: 'CA',
+    currentAge: 50,
+    retirementAge: 70,
+    lifeExpectancy: 75,
+    region: 'ON',
+    stateTaxRate: 0,
+  };
+  const accumCA = calculateAccumulation([rrsp], profileCA, caConfig);
+  const resultCA = calculateWithdrawals(
+    [rrsp], profileCA, inflationAssumptions, accumCA, caConfig,
+  );
+  const yCA70 = resultCA.yearlyWithdrawals.find(y => y.age === 70);
+  assert(yCA70 !== undefined, 'Canadian run produced age-70 record');
+  if (yCA70) {
+    assert(
+      yCA70.taxableOrdinaryIncome > 0,
+      `Canadian age-70 record has nonzero taxable income (got ${yCA70.taxableOrdinaryIncome})`,
+    );
+    // For Canada, multiplier = 1 always. Engine federalTax should equal the
+    // direct caConfig call on nominal ordinary income (no cap gains in this scenario).
+    const expectedFedCA = caConfig.calculateFederalTax(
+      yCA70.taxableOrdinaryIncome, undefined,
+    );
+    assertApprox(
+      yCA70.federalTax, expectedFedCA, 5.0,
+      'Canada: federalTax matches direct caConfig.calculateFederalTax (no indexing)'
+    );
+  }
+}
+
+// =============================================================================
 // RUN ALL TESTS
 // =============================================================================
 
@@ -1894,6 +3208,18 @@ function runAllTests(): void {
   testEarlyWithdrawalPenalties();
   testIncomeStreamCalculator();
   testIncomeStreamWithdrawals();
+  testIncomeStreamFlags();
+  testRothConversionTaxDelta();
+  testApplyConversionsForYear();
+  testRothConversionAccumulation();
+  testRothConversionRetirement();
+  testRothConversionEmptyParity();
+  testRothConversionLifetimeDelta();
+  testSwrBucketsRateForAge();
+  testSwrBucketsValidate();
+  testSwrBucketsWithdrawals();
+  testBracketFillAdjustment();
+  testFederalBracketIndexing();
 
   console.log('\n' + '='.repeat(60));
   console.log('TEST SUMMARY');

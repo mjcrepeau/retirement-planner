@@ -1,11 +1,18 @@
 import {
   Account,
   Profile,
+  Assumptions,
   AccumulationResult,
   YearlyAccountBalance,
+  ConversionPlan,
   is401k,
 } from '../types';
 import type { CountryConfig } from '../countries';
+import {
+  applyConversionsForYear,
+  calculateConversionTaxDelta,
+} from './conversions';
+import { FEDERAL_BRACKET_INFLATION_RATIO } from './constants';
 
 /**
  * Calculate employer match for accounts that support it (401k, employer RRSP)
@@ -30,8 +37,13 @@ function calculateEmployerMatch(account: Account): number {
 export function calculateAccumulation(
   accounts: Account[],
   profile: Profile,
-  countryConfig: CountryConfig
+  countryConfig: CountryConfig,
+  assumptions?: Assumptions,
+  conversionPlans: ConversionPlan[] = [],
 ): AccumulationResult {
+  // Fallback to 0 keeps the legacy 3-arg signature working for tests that don't
+  // need conversion math; production callers always pass assumptions.
+  const inflationRate = assumptions?.inflationRate ?? 0;
   const yearsToRetirement = profile.retirementAge - profile.currentAge;
   const currentYear = new Date().getFullYear();
 
@@ -45,6 +57,8 @@ export function calculateAccumulation(
   });
 
   const yearlyBalances: YearlyAccountBalance[] = [];
+  const conversionsByYear: AccumulationResult['conversionsByYear'] = [];
+  let lifetimeConversionTaxCost = 0;
 
   // Record initial state (year 0)
   yearlyBalances.push({
@@ -59,6 +73,7 @@ export function calculateAccumulation(
   for (let i = 1; i <= yearsToRetirement; i++) {
     const age = profile.currentAge + i;
     const year = currentYear + i;
+    const yearsFromNow = i;
 
     accounts.forEach(account => {
       const currentBalance = balances[account.id];
@@ -80,6 +95,42 @@ export function calculateAccumulation(
       // 3. Grow contribution for next year
       contributions[account.id] = currentContribution * (1 + account.contributionGrowthRate);
     });
+
+    // End-of-year conversions — only fire BEFORE retirement age.
+    // The retirement loop owns conversions at age >= retirementAge to avoid
+    // double-counting at the accumulation/retirement boundary.
+    let totalConvertedThisYear = 0;
+    if (age < profile.retirementAge) {
+      const conversionResult = applyConversionsForYear({
+        age,
+        yearsFromNow,
+        plans: conversionPlans,
+        balances,
+        inflationRate,
+      });
+      totalConvertedThisYear = conversionResult.totalConvertedThisYear;
+    }
+
+    if (totalConvertedThisYear > 0) {
+      // Project nominal income for this year
+      const incomeForYear = (profile.annualIncome ?? 0) *
+        Math.pow(1 + (profile.incomeGrowthRate ?? 0), yearsFromNow);
+      // US federal brackets are partially inflation-indexed (50% of CPI/year).
+      // Same model as the retirement-side tax calc, anchored at currentAge.
+      const bracketInflationMultiplier = Math.pow(
+        1 + FEDERAL_BRACKET_INFLATION_RATIO * inflationRate,
+        yearsFromNow,
+      );
+      const taxDelta = calculateConversionTaxDelta({
+        incomeForYear,
+        conversionTotalForYear: totalConvertedThisYear,
+        filingStatus: profile.filingStatus ?? 'single',
+        stateTaxRate: profile.stateTaxRate ?? 0,
+        bracketInflationMultiplier,
+      });
+      conversionsByYear.push({ age, year, amount: totalConvertedThisYear, taxDelta });
+      lifetimeConversionTaxCost += taxDelta;
+    }
 
     const totalBalance = Object.values(balances).reduce((sum, b) => sum + b, 0);
 
@@ -116,6 +167,8 @@ export function calculateAccumulation(
     finalBalances: { ...balances },
     totalAtRetirement: Object.values(balances).reduce((sum, b) => sum + b, 0),
     breakdownByGroup,
+    conversionsByYear,
+    lifetimeConversionTaxCost,
   };
 }
 

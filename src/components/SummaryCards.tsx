@@ -176,6 +176,22 @@ export function SummaryCards({
     ? lifetimePenalties / yearlyWithdrawals.length
     : 0;
 
+  const lifetimeConversionTaxCost = accumulationResult.lifetimeConversionTaxCost ?? 0;
+  const lifetimeTaxDeltaFromConversion = retirementResult.lifetimeTaxDeltaFromConversion ?? 0;
+  const finalBalanceDeltaFromConversion = retirementResult.finalBalanceDeltaFromConversion ?? 0;
+  const lifetimeAfterTaxDeltaFromConversion = retirementResult.lifetimeAfterTaxDeltaFromConversion ?? 0;
+  const netConversionBenefit = finalBalanceDeltaFromConversion
+    + lifetimeAfterTaxDeltaFromConversion
+    - lifetimeConversionTaxCost;
+
+  const inRetirementConversionTax = yearlyWithdrawals
+    .filter(y => y.conversionAmount > 0)
+    .reduce((acc, y) => acc + y.federalTax + y.stateTax, 0);
+
+  const hasPreRetirementConversion = (accumulationResult.conversionsByYear ?? []).length > 0;
+  const hasAnyConversion = hasPreRetirementConversion ||
+    yearlyWithdrawals.some(y => y.conversionAmount > 0);
+
   return (
     <div className="space-y-6">
       {/* Invalid Age Configuration Warning */}
@@ -192,6 +208,37 @@ export function SummaryCards({
                 retirement age ({profile.retirementAge}), which should be less than life expectancy ({profile.lifeExpectancy}).
               </p>
             </div>
+          </div>
+        </div>
+      )}
+
+      {hasPreRetirementConversion && (
+        <div>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
+            Pre-Retirement (Age {profile.currentAge} → {profile.retirementAge - 1})
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <ExpandableStatCard
+              title="Conversion Tax Cost"
+              value={formatCurrency(lifetimeConversionTaxCost)}
+              subtitle="Extra federal + state tax during accumulation"
+              color="red"
+              formula="Σ (tax(income+conversion) − tax(income)) over pre-retirement years"
+              details={
+                <div>
+                  <p className="font-medium mb-1">By year:</p>
+                  <ul className="space-y-0.5">
+                    {(accumulationResult.conversionsByYear ?? []).map(c => (
+                      <li key={c.age}>Age {c.age}: {formatCurrency(c.amount)} converted, {formatCurrency(c.taxDelta)} extra tax</li>
+                    ))}
+                  </ul>
+                  <p className="mt-2">
+                    Total converted (pre-retirement):{' '}
+                    {formatCurrency((accumulationResult.conversionsByYear ?? []).reduce((s, c) => s + c.amount, 0))}
+                  </p>
+                </div>
+              }
+            />
           </div>
         </div>
       )}
@@ -337,6 +384,11 @@ export function SummaryCards({
                 <p className="text-gray-500 dark:text-gray-400 italic mt-1">
                   Standard deduction: {formatCurrency(standardDeduction)} ({profile.filingStatus === 'married_filing_jointly' ? 'MFJ' : 'Single'})
                 </p>
+                {hasAnyConversion && yearlyWithdrawals.some(y => y.conversionAmount > 0) && (
+                  <p className="mt-2 text-gray-500 dark:text-gray-400 italic">
+                    Of which from conversions during retirement: ~{formatCurrency(inRetirementConversionTax)} (federal + state in years a conversion was active)
+                  </p>
+                )}
               </div>
             }
           />
@@ -373,7 +425,7 @@ export function SummaryCards({
       {/* Additional Insights */}
       <div>
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Key Insights</h3>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <ExpandableStatCard
             title="Years to Retirement"
             value={`${yearsToRetirement} years`}
@@ -417,6 +469,79 @@ export function SummaryCards({
               }
             />
           ) : null}
+          {hasAnyConversion && (
+            <ExpandableStatCard
+              title="Tax Change from Conversion"
+              value={`${lifetimeTaxDeltaFromConversion >= 0 ? '+' : '−'}${formatCurrency(Math.abs(lifetimeTaxDeltaFromConversion))}`}
+              subtitle={
+                lifetimeTaxDeltaFromConversion === 0
+                  ? 'Conversions had no net lifetime effect'
+                  : lifetimeTaxDeltaFromConversion < 0
+                    ? `Conversions saved ${formatCurrency(Math.abs(lifetimeTaxDeltaFromConversion))} over your lifetime`
+                    : `Conversions cost ${formatCurrency(lifetimeTaxDeltaFromConversion)} over your lifetime`
+              }
+              color={lifetimeTaxDeltaFromConversion < 0 ? 'green' : lifetimeTaxDeltaFromConversion > 0 ? 'red' : 'teal'}
+              formula="(Total taxes WITH conversions) − (Total taxes WITHOUT conversions)"
+              details={
+                <div>
+                  <p>Pre-retirement conversion tax: {formatCurrency(lifetimeConversionTaxCost)}</p>
+                  <p>Retirement-side change reflected in Lifetime Taxes via the shadow simulation.</p>
+                  <p className="text-gray-500 dark:text-gray-400 italic mt-1">
+                    Savings come from reduced future RMDs and tax-free Roth growth.
+                  </p>
+                </div>
+              }
+            />
+          )}
+          {hasAnyConversion && (
+            <ExpandableStatCard
+              title="Net Conversion Benefit"
+              value={`${netConversionBenefit >= 0 ? '+' : '−'}${formatCurrency(Math.abs(netConversionBenefit))}`}
+              subtitle={
+                netConversionBenefit === 0
+                  ? 'Conversions had no net effect on lifetime wealth'
+                  : netConversionBenefit > 0
+                    ? `Conversions increased net wealth by ${formatCurrency(netConversionBenefit)}`
+                    : `Conversions reduced net wealth by ${formatCurrency(Math.abs(netConversionBenefit))}`
+              }
+              color={netConversionBenefit > 0 ? 'green' : netConversionBenefit < 0 ? 'red' : 'teal'}
+              formula="ΔFinal Balance + ΔLifetime After-Tax Income − Pre-Retirement Conversion Tax"
+              details={
+                <div>
+                  <p className="mb-2">Three real-money flows from converting:</p>
+                  <div className="font-mono text-xs space-y-1 mb-2">
+                    <div className="flex justify-between">
+                      <span>ΔFinal Balance at life expectancy</span>
+                      <span className={finalBalanceDeltaFromConversion >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                        {finalBalanceDeltaFromConversion >= 0 ? '+' : '−'}{formatCurrency(Math.abs(finalBalanceDeltaFromConversion))}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>ΔLifetime After-Tax Income</span>
+                      <span className={lifetimeAfterTaxDeltaFromConversion >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                        {lifetimeAfterTaxDeltaFromConversion >= 0 ? '+' : '−'}{formatCurrency(Math.abs(lifetimeAfterTaxDeltaFromConversion))}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Pre-Retirement Conversion Tax</span>
+                      <span className="text-red-600 dark:text-red-400">
+                        −{formatCurrency(lifetimeConversionTaxCost)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between border-t border-gray-300 dark:border-gray-600 pt-1 font-semibold">
+                      <span>Net</span>
+                      <span className={netConversionBenefit >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                        {netConversionBenefit >= 0 ? '+' : '−'}{formatCurrency(Math.abs(netConversionBenefit))}
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-gray-500 dark:text-gray-400 italic">
+                    Caveat: assumes you do NOT increase withdrawals to gross-up for higher conversion-year taxes. If you would actually pull more from accounts to keep the same after-tax spending, this metric overstates the benefit because the extra withdrawals would shrink ΔFinal Balance further.
+                  </p>
+                </div>
+              }
+            />
+          )}
         </div>
       </div>
 

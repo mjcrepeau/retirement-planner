@@ -33,10 +33,34 @@ export type IncomeTaxTreatment = 'social_security' | 'fully_taxable' | 'other_in
 export interface IncomeStream {
   id: string;
   name: string;
-  monthlyAmount: number;      // in today's dollars
+  monthlyAmount: number;      // in today's dollars (or fixed nominal $ if fixedPayment === true)
   startAge: number;
   endAge?: number;            // optional: last age income is received
   taxTreatment: IncomeTaxTreatment;
+  // Annuity-style: nominal payment, never inflation-adjusted. Mostly intended
+  // for fixed-payment annuities and similar pensions without COLA. Default false.
+  fixedPayment?: boolean;
+  // Social Security only: when true, simulate the projected post-2032 trust-fund
+  // shortfall by applying SS_REDUCTION_FACTOR (0.85) to the inflated benefit
+  // starting in calendar year SS_REDUCTION_YEAR (2032). Default false.
+  applySSReduction?: boolean;
+}
+
+export interface ConversionPlan {
+  id: string;
+  name: string;
+  sourceAccountId: string;      // must reference a 'pretax' account
+  destinationAccountId: string; // must reference a 'roth' account
+  startAge: number;             // inclusive
+  endAge: number;               // inclusive; required (unlike IncomeStream.endAge which is optional)
+  yearlyAmount: number;         // today's dollars; inflated yearly
+}
+
+export interface ConversionYearRecord {
+  age: number;
+  year: number;
+  amount: number;     // nominal converted dollars that year
+  taxDelta: number;   // extra federal+state tax that year (always ≥ 0)
 }
 
 export interface AccountWithdrawalRules {
@@ -70,17 +94,27 @@ export interface Profile {
   region: string; // State code (US) or Province code (CA)
   filingStatus?: FilingStatus; // US only
   stateTaxRate?: number; // US only (as decimal), CA uses province
-  annualIncome?: number; // For CA RRSP contribution room calculation
+  annualIncome?: number; // Current ordinary income in today's dollars (US: conversion tax modeling; CA: RRSP contribution room)
+  incomeGrowthRate?: number; // Annual growth rate for projected pre-retirement income (decimal, e.g. 0.03)
   socialSecurityBenefit?: number; // Canada CPP only; US uses income streams (annual)
   socialSecurityStartAge?: number; // Canada CPP start age; US uses income streams
   secondaryBenefitStartAge?: number; // OAS for CA
   secondaryBenefitAmount?: number; // OAS amount for CA
 }
 
+export interface SwrBucket {
+  id: string;
+  startAge: number;       // inclusive
+  endAge: number;         // inclusive
+  rate: number;           // decimal, e.g. 0.07 for 7%
+}
+
 export interface Assumptions {
   inflationRate: number; // as decimal
   safeWithdrawalRate: number; // as decimal
   retirementReturnRate: number; // as decimal
+  swrBuckets?: SwrBucket[]; // optional; empty/undefined → use safeWithdrawalRate for all years
+  bracketFillAdjustment?: number; // decimal in [-1.0, 1.0]; 0 = default; US-only
 }
 
 export interface YearlyAccountBalance {
@@ -96,6 +130,8 @@ export interface AccumulationResult {
   finalBalances: Record<string, number>;
   totalAtRetirement: number;
   breakdownByGroup: Record<string, number>; // Flexible groupings defined by country
+  conversionsByYear: ConversionYearRecord[];
+  lifetimeConversionTaxCost: number; // always ≥ 0; sum of pre-retirement taxDelta
 }
 
 export interface YearlyWithdrawal {
@@ -106,16 +142,31 @@ export interface YearlyWithdrawal {
   totalWithdrawal: number;
   governmentBenefitIncome: number;  // was socialSecurityIncome — Canada CPP/OAS only
   incomeStreamIncome: number;       // user-defined income streams (SS, pensions, etc.)
+  // Per-stream nominal income for the year, keyed by stream id. Populated only
+  // for streams active at this age. Streams diverge (fixed-payment vs inflated,
+  // SS-reduction vs not), so the table/chart can't use a proportional split of
+  // incomeStreamIncome — they read from this map instead.
+  incomeStreamByStream: Record<string, number>;
   grossIncome: number;
+  // IRS-style "taxable income" — the actual base for federal income brackets.
+  // For US: traditional withdrawals + 85% SS/gov benefits + 100% pensions/other-income
+  // + Roth conversion − (indexed) standard deduction (clamped at 0).
+  // For Canada: same gross figure without subtraction (BPA is a credit, not a
+  // deduction; gross is the bracket base in Canadian tax math).
+  taxableOrdinaryIncome: number;
   federalTax: number;
   stateTax: number;
   totalTax: number;
   afterTaxIncome: number;
   targetSpending: number;
+  // targetSpending deflated to currentAge dollars: targetSpending / (1+inflation)^yearsFromNow.
+  // Lets the user evaluate "is $X enough?" without doing the inflation math in their head.
+  targetSpendingTodayDollars: number;
   rmdAmount: number;
   totalRemainingBalance: number;
   earlyWithdrawalPenalties: EarlyWithdrawalPenalty[];
   totalPenalties: number;
+  conversionAmount: number;
 }
 
 export interface RetirementResult {
@@ -125,6 +176,16 @@ export interface RetirementResult {
   sustainableMonthlyWithdrawal: number;
   sustainableAnnualWithdrawal: number;
   accountDepletionAges: Record<string, number | null>; // accountId -> age when depleted
+  lifetimeTaxDeltaFromConversion: number;
+  // Portfolio total at life expectancy: with-conversions minus without-conversions.
+  // Negative = conversions reduced terminal wealth; positive = conversions grew it.
+  // Captures second-order effects (RMD shifts, withdrawal-mix changes) that the
+  // tax-delta metric alone doesn't expose.
+  finalBalanceDeltaFromConversion: number;
+  // Sum of afterTaxIncome across all retirement years: with-conversions minus
+  // without-conversions. Typically negative — conversions raise ordinary income
+  // and therefore taxes during conversion years, reducing spending power.
+  lifetimeAfterTaxDeltaFromConversion: number;
 }
 
 export interface AppState {

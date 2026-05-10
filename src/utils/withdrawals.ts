@@ -5,6 +5,7 @@ import {
   AccumulationResult,
   RetirementResult,
   YearlyWithdrawal,
+  ConversionPlan,
   getTaxTreatment,
   isTraditional,
 } from '../types';
@@ -14,11 +15,18 @@ import {
   calculateStateTax,
   getStandardDeduction,
 } from './taxes';
-import { getRMDDivisor, RMD_START_AGE } from './constants';
+import { applyConversionsForYear } from './conversions';
+import {
+  getRMDDivisor,
+  RMD_START_AGE,
+  FEDERAL_BRACKET_INFLATION_RATIO,
+  SS_REDUCTION_YEAR,
+  SS_REDUCTION_FACTOR,
+} from './constants';
 import type { CountryConfig } from '../countries';
 import { calculatePenalties, type AccountWithdrawal } from './penaltyCalculator';
 import { getDefaultWithdrawalAge } from './withdrawalDefaults';
-import { calculateIncomeStreamBenefits } from './incomeStreams';
+import { rateForAge } from './swrBuckets';
 
 interface AccountState {
   id: string;
@@ -81,7 +89,8 @@ export function calculateWithdrawals(
   assumptions: Assumptions,
   accumulationResult: AccumulationResult,
   countryConfig?: CountryConfig,
-  incomeStreams?: IncomeStream[]
+  incomeStreams?: IncomeStream[],
+  conversionPlans: ConversionPlan[] = [],
 ): RetirementResult {
   const retirementYears = profile.lifeExpectancy - profile.retirementAge;
   const currentYear = new Date().getFullYear();
@@ -99,9 +108,9 @@ export function calculateWithdrawals(
       : 0,
   }));
 
-  // Calculate initial target spending based on safe withdrawal rate
+  // Total portfolio at retirement — used as the base for targetSpending
+  // each year (with the rate possibly varying by bucket).
   const totalPortfolio = accumulationResult.totalAtRetirement;
-  let targetSpending = totalPortfolio * assumptions.safeWithdrawalRate;
 
   const yearlyWithdrawals: YearlyWithdrawal[] = [];
   let lifetimeTaxesPaid = 0;
@@ -115,6 +124,20 @@ export function calculateWithdrawals(
   for (let i = 0; i <= retirementYears; i++) {
     const age = profile.retirementAge + i;
     const year = retirementStartYear + i;
+
+    // Determine this year's targetSpending. Buckets override the global SWR
+    // for matching age ranges; uncovered ages fall back to safeWithdrawalRate.
+    const yearsFromRetirementForSpending = age - profile.retirementAge;
+    const inflationFactorForSpending = Math.pow(
+      1 + assumptions.inflationRate,
+      yearsFromRetirementForSpending,
+    );
+    const swrRate = rateForAge(
+      age,
+      assumptions.swrBuckets ?? [],
+      assumptions.safeWithdrawalRate,
+    );
+    const targetSpending = totalPortfolio * swrRate * inflationFactorForSpending;
 
     // Check if portfolio is depleted
     const totalRemaining = accountStates.reduce((sum, acc) => sum + acc.balance, 0);
@@ -145,16 +168,41 @@ export function calculateWithdrawals(
     }
     const governmentBenefitIncome = governmentBenefits;
 
-    // Calculate user-defined income stream benefits
-    const streamResult = calculateIncomeStreamBenefits(incomeStreams || [], age);
-    // Apply inflation adjustment (stream amounts are in today's dollars)
-    const inflatedStreamIncome = streamResult.totalIncome * inflationMultiplier;
+    // Calculate user-defined income stream benefits, per-stream so per-stream
+    // flags (fixedPayment, applySSReduction) can be honored individually.
+    //
+    // Default behavior: monthlyAmount × 12 in today's dollars, inflated from
+    // currentAge to the current retirement year.
+    // - fixedPayment === true: skip inflation entirely (annuity-style nominal $).
+    // - applySSReduction === true (SS streams only): apply SS_REDUCTION_FACTOR
+    //   for calendar years >= SS_REDUCTION_YEAR, simulating the projected
+    //   trust-fund shortfall.
     const inflatedStreamByTax = {
-      social_security: streamResult.byTaxTreatment.social_security * inflationMultiplier,
-      fully_taxable: streamResult.byTaxTreatment.fully_taxable * inflationMultiplier,
-      other_income: streamResult.byTaxTreatment.other_income * inflationMultiplier,
-      tax_free: streamResult.byTaxTreatment.tax_free * inflationMultiplier,
+      social_security: 0,
+      fully_taxable: 0,
+      other_income: 0,
+      tax_free: 0,
     };
+    const incomeStreamByStream: Record<string, number> = {};
+    let inflatedStreamIncome = 0;
+    for (const stream of incomeStreams ?? []) {
+      if (age < stream.startAge) continue;
+      if (stream.endAge !== undefined && age > stream.endAge) continue;
+      const annualAmount = stream.monthlyAmount * 12;
+      let amount = stream.fixedPayment
+        ? annualAmount
+        : annualAmount * inflationMultiplier;
+      if (
+        stream.applySSReduction
+        && stream.taxTreatment === 'social_security'
+        && year >= SS_REDUCTION_YEAR
+      ) {
+        amount *= SS_REDUCTION_FACTOR;
+      }
+      inflatedStreamByTax[stream.taxTreatment] += amount;
+      incomeStreamByStream[stream.id] = amount;
+      inflatedStreamIncome += amount;
+    }
 
     const totalRetirementIncome = governmentBenefitIncome + inflatedStreamIncome;
 
@@ -189,6 +237,7 @@ export function calculateWithdrawals(
       rmdAmount,
       totalRetirementIncome,
       profile,
+      assumptions,
       accountDepletionAges,
       age,
       countryConfig,
@@ -206,6 +255,19 @@ export function calculateWithdrawals(
       acc.balance *= (1 + assumptions.retirementReturnRate);
     });
 
+    // End-of-year Roth conversions (US-only feature; harmless no-op if plans is empty)
+    const balancesById: Record<string, number> = {};
+    accountStates.forEach(acc => { balancesById[acc.id] = acc.balance; });
+    const { totalConvertedThisYear } = applyConversionsForYear({
+      age,
+      yearsFromNow: age - profile.currentAge,
+      plans: conversionPlans,
+      balances: balancesById,
+      inflationRate: assumptions.inflationRate,
+    });
+    accountStates.forEach(acc => { acc.balance = balancesById[acc.id]; });
+    const conversionAmount = totalConvertedThisYear;
+
     // Calculate taxes using country-specific logic
     // Government benefits (Canada CPP/OAS): 85% taxable
     const governmentBenefitTaxable = governmentBenefitIncome * 0.85;
@@ -216,45 +278,71 @@ export function calculateWithdrawals(
     // tax_free: excluded from taxable income
 
     const ordinaryIncome = withdrawals.traditionalWithdrawal +
-      governmentBenefitTaxable + ssStreamTaxable + pensionTaxable + otherIncomeTaxable;
+      governmentBenefitTaxable + ssStreamTaxable + pensionTaxable + otherIncomeTaxable +
+      conversionAmount;
     const capitalGains = withdrawals.taxableGains;
+
+    // US federal brackets and standard deduction are partially inflation-indexed
+    // in the model (50% of CPI/year, applied per FEDERAL_BRACKET_INFLATION_RATIO).
+    // We use a deflate-compute-scale transformation: divide nominal income by
+    // the multiplier to put it on today's-bracket scale, evaluate tax with the
+    // existing tax engine, then scale the resulting tax up by the multiplier.
+    // This is mathematically equivalent to scaling all bracket boundaries (and
+    // the std deduction inside calculateCapitalGainsTax) by the multiplier,
+    // without modifying the tax engine itself. Canada is unaffected.
+    const isUS = countryConfig?.code === 'US' || !countryConfig;
+    const bracketInflationMultiplier = isUS
+      ? Math.pow(1 + FEDERAL_BRACKET_INFLATION_RATIO * assumptions.inflationRate, yearsFromNow)
+      : 1;
+    const stdDed = getStandardDeduction(profile.filingStatus || 'single');
+    const indexedStdDed = stdDed * bracketInflationMultiplier;
 
     let federalTax: number;
     let stateTax: number;
 
     if (countryConfig) {
-      // Use country-specific tax calculations
-      federalTax = countryConfig.calculateFederalTax(ordinaryIncome, profile.filingStatus);
-      // Add capital gains tax (country handles inclusion rates)
-      federalTax += countryConfig.calculateCapitalGainsTax(
-        capitalGains,
-        ordinaryIncome,
-        profile.region || '',
-        profile.filingStatus
-      );
-      // Calculate regional (state/provincial) tax
-      stateTax = countryConfig.calculateRegionalTax(
-        ordinaryIncome + capitalGains,
-        profile.region || ''
-      );
-      // For US, regional tax is still calculated using flat rate from profile
-      // (the US config returns 0 from calculateRegionalTax)
       if (countryConfig.code === 'US') {
+        // Deflate, compute, scale back up
+        const deflatedOrdinary = ordinaryIncome / bracketInflationMultiplier;
+        const deflatedGains = capitalGains / bracketInflationMultiplier;
+        federalTax = countryConfig.calculateFederalTax(deflatedOrdinary, profile.filingStatus)
+          * bracketInflationMultiplier;
+        federalTax += countryConfig.calculateCapitalGainsTax(
+          deflatedGains,
+          deflatedOrdinary,
+          profile.region || '',
+          profile.filingStatus,
+        ) * bracketInflationMultiplier;
         stateTax = calculateStateTax(
-          ordinaryIncome + capitalGains - getStandardDeduction(profile.filingStatus || 'single'),
-          profile.stateTaxRate || 0
+          ordinaryIncome + capitalGains - indexedStdDed,
+          profile.stateTaxRate || 0,
+        );
+      } else {
+        // Canada — no bracket indexing; use country-config functions as-is.
+        federalTax = countryConfig.calculateFederalTax(ordinaryIncome, profile.filingStatus);
+        federalTax += countryConfig.calculateCapitalGainsTax(
+          capitalGains,
+          ordinaryIncome,
+          profile.region || '',
+          profile.filingStatus,
+        );
+        stateTax = countryConfig.calculateRegionalTax(
+          ordinaryIncome + capitalGains,
+          profile.region || '',
         );
       }
     } else {
-      // Fallback to US logic
+      // Fallback to US logic — apply bracket indexing
+      const deflatedOrdinary = ordinaryIncome / bracketInflationMultiplier;
+      const deflatedGains = capitalGains / bracketInflationMultiplier;
       federalTax = calculateTotalFederalTax(
-        ordinaryIncome,
-        capitalGains,
-        profile.filingStatus || 'single'
-      );
+        deflatedOrdinary,
+        deflatedGains,
+        profile.filingStatus || 'single',
+      ) * bracketInflationMultiplier;
       stateTax = calculateStateTax(
-        ordinaryIncome + capitalGains - getStandardDeduction(profile.filingStatus || 'single'),
-        profile.stateTaxRate || 0
+        ordinaryIncome + capitalGains - indexedStdDed,
+        profile.stateTaxRate || 0,
       );
     }
     const totalTax = federalTax + stateTax + totalPenalties;
@@ -278,20 +366,26 @@ export function calculateWithdrawals(
       totalWithdrawal: grossWithdrawal,
       governmentBenefitIncome,
       incomeStreamIncome: inflatedStreamIncome,
+      incomeStreamByStream,
       grossIncome,
+      // For US, subtract the (inflation-indexed) standard deduction so the
+      // displayed value matches IRS "taxable income" — the actual base for
+      // federal brackets. For Canada, keep the gross figure since BPA is a
+      // non-refundable tax credit, not a deduction; gross IS the bracket base.
+      taxableOrdinaryIncome: isUS ? Math.max(0, ordinaryIncome - indexedStdDed) : ordinaryIncome,
       federalTax,
       stateTax,
       totalTax,
       afterTaxIncome,
       targetSpending,
+      targetSpendingTodayDollars: targetSpending / inflationMultiplier,
       rmdAmount,
       totalRemainingBalance: accountStates.reduce((sum, acc) => sum + acc.balance, 0),
       earlyWithdrawalPenalties: penalties,
       totalPenalties,
+      conversionAmount,
     });
 
-    // Inflate target spending for next year
-    targetSpending *= (1 + assumptions.inflationRate);
   }
 
   // Calculate sustainable withdrawal amounts in today's dollars
@@ -305,6 +399,9 @@ export function calculateWithdrawals(
     sustainableMonthlyWithdrawal,
     sustainableAnnualWithdrawal,
     accountDepletionAges,
+    lifetimeTaxDeltaFromConversion: 0,
+    finalBalanceDeltaFromConversion: 0,
+    lifetimeAfterTaxDeltaFromConversion: 0,
   };
 }
 
@@ -333,6 +430,7 @@ function performTaxOptimizedWithdrawal(
   rmdAmount: number,
   totalRetirementIncome: number,
   profile: Profile,
+  assumptions: Assumptions,
   accountDepletionAges: Record<string, number | null>,
   age: number,
   countryConfig?: CountryConfig,
@@ -411,11 +509,24 @@ function performTaxOptimizedWithdrawal(
   }
 
   // Step 2: Fill up to 12% bracket with additional traditional withdrawals
-  // (Standard deduction + 12% bracket gives good tax efficiency)
+  // (Standard deduction + 12% bracket gives good tax efficiency).
+  // The optional bracketFillAdjustment dial (US-only) resizes the 12% portion
+  // of the ceiling — positive pulls more from Traditional, negative pulls less.
+  // The ceiling also tracks the partial bracket indexing applied to US tax
+  // calc (FEDERAL_BRACKET_INFLATION_RATIO × inflation per year), so the
+  // "fill to top of 12% bracket" target stays in sync with the bracket math
+  // used to compute taxes that year.
   const filingStatus = profile.filingStatus || 'single';
   const standardDeduction = getStandardDeduction(filingStatus);
   const bracket12Max = filingStatus === 'married_filing_jointly' ? 94300 : 47150;
-  const targetOrdinaryIncome = standardDeduction + bracket12Max;
+  const isUS = countryConfig?.code === 'US' || !countryConfig;
+  const adjustment = isUS ? (assumptions.bracketFillAdjustment ?? 0) : 0;
+  const yearsFromCurrentAge = age - profile.currentAge;
+  const bracketInflationMultiplier = isUS
+    ? Math.pow(1 + FEDERAL_BRACKET_INFLATION_RATIO * assumptions.inflationRate, yearsFromCurrentAge)
+    : 1;
+  const adjustedBracket12 = bracket12Max * (1 + adjustment);
+  const targetOrdinaryIncome = (standardDeduction + adjustedBracket12) * bracketInflationMultiplier;
   const currentOrdinaryIncome = result.traditionalWithdrawal +
     (nonPortfolioTaxableIncome || 0);
   const roomIn12Bracket = Math.max(0, targetOrdinaryIncome - currentOrdinaryIncome);

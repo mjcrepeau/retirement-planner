@@ -69,6 +69,7 @@ The withdrawal algorithm follows a tax-efficient strategy:
 - State tax rate configuration
 - Standard deduction applied automatically
 - Social Security taxation (85% taxable)
+- **Partial bracket indexing**: federal bracket boundaries, the standard deduction, and capital-gains thresholds are inflated at **50% of your configured inflation rate** per year. Based on the empirical observation that US federal brackets have grown at roughly half of CPI over the last 60 years (with a 1–2 year lag). Avoids the naive "bracket creep" overstatement of future taxes that comes from holding 2024 values fixed forever.
 
 #### Canada
 - 2024 Federal tax brackets with Basic Personal Amount
@@ -89,6 +90,9 @@ The withdrawal algorithm follows a tax-efficient strategy:
 ![Graph showing retirement invome year by year](screenshots/income.png "Income graph")
 ![Graph showing retirement taxe burden year by year](screenshots/taxes.png "Tax burden graph")
 ![Table showing yearly income and spending calculations](screenshots/yearly.png "Yearly income table")
+
+![Table showing Economic Assumptions options](screenshots/withdrawl_bucket_fill.png "Economic Assumptions options")
+![Table showing ROTH conversion options](screenshots/roth_conversions.png "Roth Conversion options")
 
 
 ### Calculation Transparency
@@ -247,7 +251,7 @@ For each year of retirement:
 - Contributions are made at year-end
 - RMDs follow the IRS Uniform Lifetime Table
 - Income streams and government benefits grow with inflation
-- Tax brackets are 2024 values (not inflation-adjusted)
+- US federal tax brackets and standard deduction grow at 50% of the inflation rate per year (empirically calibrated). Canadian brackets are held at 2024 values.
 
 ## Configuration
 

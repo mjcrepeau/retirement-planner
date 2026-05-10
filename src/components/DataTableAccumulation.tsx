@@ -116,6 +116,7 @@ export function DataTableAccumulation({ accounts, result }: DataTableAccumulatio
                     <th className="text-right py-2 px-2 font-medium text-gray-700 dark:text-gray-300">Total Balance</th>
                     <th className="text-right py-2 px-2 font-medium text-gray-700 dark:text-gray-300">Year Growth</th>
                     <th className="text-right py-2 px-2 font-medium text-gray-700 dark:text-gray-300">Total Contributions</th>
+                    <th className="text-right py-2 px-2 font-medium text-red-600 dark:text-red-400">Conversion Tax</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -126,6 +127,7 @@ export function DataTableAccumulation({ accounts, result }: DataTableAccumulatio
                       return sum + getEmployerMatch(acc, yearData.contributions[acc.id] || 0);
                     }, 0);
                     const growth = yearData.totalBalance - prevBalance;
+                    const conversionTax = result.conversionsByYear.find(c => c.age === yearData.age)?.taxDelta ?? 0;
 
                     return (
                       <tr key={yearData.age} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50">
@@ -137,6 +139,9 @@ export function DataTableAccumulation({ accounts, result }: DataTableAccumulatio
                         </td>
                         <td className="py-2 px-2 text-right font-mono text-gray-600 dark:text-gray-400">
                           {formatCurrency(totalContrib + totalMatch)}
+                        </td>
+                        <td className="py-2 px-2 text-right font-mono text-red-600 dark:text-red-400">
+                          {conversionTax > 0 ? formatCurrency(conversionTax) : '-'}
                         </td>
                       </tr>
                     );

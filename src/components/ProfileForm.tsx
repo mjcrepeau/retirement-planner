@@ -129,6 +129,39 @@ export function ProfileForm({ profile, onChange }: ProfileFormProps) {
         )}
       </div>
 
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            Current Annual Income (today's $)
+            <Tooltip text="Used for Roth conversion tax modeling (US) and RRSP contribution room (Canada)." />
+          </label>
+          <NumberInput
+            value={profile.annualIncome ?? 0}
+            onChange={(val) => handleChange('annualIncome', val)}
+            min={0}
+            defaultValue={100000}
+            className={inputClassName}
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            Income Growth Rate (%)
+            <Tooltip text="Annual growth rate used to project future income for Roth conversion tax modeling." />
+          </label>
+          <NumberInput
+            value={profile.incomeGrowthRate ?? 0.03}
+            onChange={(val) => handleChange('incomeGrowthRate', val)}
+            min={0}
+            max={20}
+            isPercentage
+            decimals={1}
+            defaultValue={0.03}
+            className={inputClassName}
+          />
+        </div>
+      </div>
+
       {country === 'CA' && (
         <>
           <h4 className="text-md font-medium text-gray-800 dark:text-gray-200 mt-6 mb-3">

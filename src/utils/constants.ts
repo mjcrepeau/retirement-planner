@@ -1,5 +1,5 @@
 import { TaxBracket, RMDEntry } from '../types';
-import type { IncomeStream } from '../types';
+import type { IncomeStream, ConversionPlan, SwrBucket } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 
 // 2024 Federal Tax Brackets - Married Filing Jointly
@@ -28,6 +28,13 @@ export const TAX_BRACKETS_SINGLE: TaxBracket[] = [
 export const STANDARD_DEDUCTION_MFJ = 29200;
 export const STANDARD_DEDUCTION_SINGLE = 14600;
 
+// Empirical observation: US federal tax bracket boundaries and the standard
+// deduction have historically grown at roughly 50% of CPI inflation over the
+// last 60 years (with a 1-2 year lag). Used to inflate bracket boundaries and
+// the standard deduction in retirement-year and pre-retirement-year US tax
+// calculations so the model doesn't suffer from naive bracket creep.
+export const FEDERAL_BRACKET_INFLATION_RATIO = 0.5;
+
 // Long-term capital gains rates (2024)
 export const CAPITAL_GAINS_BRACKETS_MFJ: TaxBracket[] = [
   { min: 0, max: 94050, rate: 0 },
@@ -43,6 +50,14 @@ export const CAPITAL_GAINS_BRACKETS_SINGLE: TaxBracket[] = [
 
 // RMD starts at age 73 (SECURE 2.0 Act)
 export const RMD_START_AGE = 73;
+
+// Social Security trust fund projected depletion year (per the 2024 SSA
+// Trustees report). Absent legislative action, scheduled benefits would be
+// reduced by an estimated 17% from that point. The model uses a 15% cut
+// when a user opts in via per-stream checkbox — conservative midpoint of
+// commonly cited 10–20% scenarios.
+export const SS_REDUCTION_YEAR = 2032;
+export const SS_REDUCTION_FACTOR = 0.85;
 
 // IRS Uniform Lifetime Table (simplified version)
 export const RMD_TABLE: RMDEntry[] = [
@@ -129,12 +144,16 @@ export const DEFAULT_PROFILE = {
   region: 'CA', // California
   filingStatus: 'married_filing_jointly' as const,
   stateTaxRate: 0.05,
+  annualIncome: 100000,
+  incomeGrowthRate: 0.03,
 };
 
 export const DEFAULT_ASSUMPTIONS = {
   inflationRate: 0.03,
   safeWithdrawalRate: 0.04,
   retirementReturnRate: 0.05,
+  swrBuckets: [] as SwrBucket[],
+  bracketFillAdjustment: 0,
 };
 
 export const DEFAULT_INCOME_STREAMS: IncomeStream[] = [
@@ -146,3 +165,5 @@ export const DEFAULT_INCOME_STREAMS: IncomeStream[] = [
     taxTreatment: 'social_security',
   },
 ];
+
+export const DEFAULT_CONVERSION_PLANS: ConversionPlan[] = [];

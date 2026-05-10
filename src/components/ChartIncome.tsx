@@ -104,20 +104,17 @@ export function ChartIncome({ result, incomeStreams = [], isDarkMode = false }: 
     let otherIncome = 0;
     let taxFreeIncome = 0;
 
-    // Split incomeStreamIncome proportionally by tax treatment
-    const activeStreams = incomeStreams.filter(s => year.age >= s.startAge && (!s.endAge || year.age <= s.endAge));
-    const totalMonthly = activeStreams.reduce((sum, s) => sum + s.monthlyAmount, 0);
-
-    if (totalMonthly > 0 && year.incomeStreamIncome > 0) {
-      for (const stream of activeStreams) {
-        const ratio = stream.monthlyAmount / totalMonthly;
-        const streamAmount = year.incomeStreamIncome * ratio;
-        switch (stream.taxTreatment) {
-          case 'social_security': ssIncome += streamAmount; break;
-          case 'fully_taxable': pensionIncome += streamAmount; break;
-          case 'other_income': otherIncome += streamAmount; break;
-          case 'tax_free': taxFreeIncome += streamAmount; break;
-        }
+    // Sum each tax-treatment band from the engine's per-stream amounts. Streams
+    // with different inflation behaviors (fixedPayment, applySSReduction) need
+    // direct lookup — proportional splits would re-inflate fixed-payment streams.
+    for (const stream of incomeStreams) {
+      const streamAmount = year.incomeStreamByStream?.[stream.id] ?? 0;
+      if (streamAmount <= 0) continue;
+      switch (stream.taxTreatment) {
+        case 'social_security': ssIncome += streamAmount; break;
+        case 'fully_taxable': pensionIncome += streamAmount; break;
+        case 'other_income': otherIncome += streamAmount; break;
+        case 'tax_free': taxFreeIncome += streamAmount; break;
       }
     }
 

@@ -249,52 +249,65 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
             </ol>
           ) : (
             // US withdrawal strategy
-            <ol className="space-y-3">
-              <li className="flex gap-3">
-                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xs font-bold">1</span>
-                <div>
-                  <strong className="text-gray-800 dark:text-gray-200">Required Minimum Distributions (RMDs)</strong>
-                  <p className="text-gray-600 dark:text-gray-400">Starting at age {RMD_START_AGE}, traditional accounts must take RMDs based on IRS life expectancy tables.</p>
-                </div>
-              </li>
-              <li className="flex gap-3">
-                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xs font-bold">2</span>
-                <div>
-                  <strong className="text-gray-800 dark:text-gray-200">Fill 12% Tax Bracket</strong>
-                  <p className="text-gray-600 dark:text-gray-400">
-                    Additional traditional withdrawals to fill the 12% bracket (up to {formatCurrency(standardDeduction + (isMarried ? 94300 : 47150))} total ordinary income).
-                  </p>
-                </div>
-              </li>
-              <li className="flex gap-3">
-                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-green-100 dark:bg-green-900 text-green-600 dark:text-green-400 flex items-center justify-center text-xs font-bold">3</span>
-                <div>
-                  <strong className="text-gray-800 dark:text-gray-200">Roth Accounts</strong>
-                  <p className="text-gray-600 dark:text-gray-400">Tax-free withdrawals for remaining spending needs.</p>
-                </div>
-              </li>
-              <li className="flex gap-3">
-                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-amber-100 dark:bg-amber-900 text-amber-600 dark:text-amber-400 flex items-center justify-center text-xs font-bold">4</span>
-                <div>
-                  <strong className="text-gray-800 dark:text-gray-200">Taxable Accounts</strong>
-                  <p className="text-gray-600 dark:text-gray-400">Only gains portion is taxed at capital gains rates (often 0% or 15%).</p>
-                </div>
-              </li>
-              <li className="flex gap-3">
-                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-purple-100 dark:bg-purple-900 text-purple-600 dark:text-purple-400 flex items-center justify-center text-xs font-bold">5</span>
-                <div>
-                  <strong className="text-gray-800 dark:text-gray-200">HSA Accounts</strong>
-                  <p className="text-gray-600 dark:text-gray-400">Used last; assumed tax-free for qualified medical expenses.</p>
-                </div>
-              </li>
-              <li className="flex gap-3">
-                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 flex items-center justify-center text-xs font-bold">6</span>
-                <div>
-                  <strong className="text-gray-800 dark:text-gray-200">Additional Traditional</strong>
-                  <p className="text-gray-600 dark:text-gray-400">If more is needed, withdraws from traditional accounts at higher tax brackets.</p>
-                </div>
-              </li>
-            </ol>
+            <>
+              <ol className="space-y-3">
+                <li className="flex gap-3">
+                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xs font-bold">1</span>
+                  <div>
+                    <strong className="text-gray-800 dark:text-gray-200">Required Minimum Distributions (RMDs)</strong>
+                    <p className="text-gray-600 dark:text-gray-400">Starting at age {RMD_START_AGE}, traditional accounts must take RMDs based on IRS life expectancy tables.</p>
+                  </div>
+                </li>
+                <li className="flex gap-3">
+                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xs font-bold">2</span>
+                  <div>
+                    <strong className="text-gray-800 dark:text-gray-200">Fill 12% Tax Bracket</strong>
+                    <p className="text-gray-600 dark:text-gray-400">
+                      Additional traditional withdrawals to fill the 12% bracket (up to {formatCurrency(standardDeduction + (isMarried ? 94300 : 47150))} total ordinary income).
+                    </p>
+                  </div>
+                </li>
+                <li className="flex gap-3">
+                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-green-100 dark:bg-green-900 text-green-600 dark:text-green-400 flex items-center justify-center text-xs font-bold">3</span>
+                  <div>
+                    <strong className="text-gray-800 dark:text-gray-200">Roth Accounts</strong>
+                    <p className="text-gray-600 dark:text-gray-400">Tax-free withdrawals for remaining spending needs.</p>
+                  </div>
+                </li>
+                <li className="flex gap-3">
+                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-amber-100 dark:bg-amber-900 text-amber-600 dark:text-amber-400 flex items-center justify-center text-xs font-bold">4</span>
+                  <div>
+                    <strong className="text-gray-800 dark:text-gray-200">Taxable Accounts</strong>
+                    <p className="text-gray-600 dark:text-gray-400">Only gains portion is taxed at capital gains rates (often 0% or 15%).</p>
+                  </div>
+                </li>
+                <li className="flex gap-3">
+                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-purple-100 dark:bg-purple-900 text-purple-600 dark:text-purple-400 flex items-center justify-center text-xs font-bold">5</span>
+                  <div>
+                    <strong className="text-gray-800 dark:text-gray-200">HSA Accounts</strong>
+                    <p className="text-gray-600 dark:text-gray-400">Used last; assumed tax-free for qualified medical expenses.</p>
+                  </div>
+                </li>
+                <li className="flex gap-3">
+                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 flex items-center justify-center text-xs font-bold">6</span>
+                  <div>
+                    <strong className="text-gray-800 dark:text-gray-200">Additional Traditional</strong>
+                    <p className="text-gray-600 dark:text-gray-400">If more is needed, withdraws from traditional accounts at higher tax brackets.</p>
+                  </div>
+                </li>
+              </ol>
+
+              <p className="text-gray-600 dark:text-gray-400 mt-4">
+                <strong className="text-gray-800 dark:text-gray-200">Bracket-Fill Adjustment (optional):</strong> The
+                Step 2 ceiling defaults to the standard deduction plus the 12% bracket top
+                ($14,600 + $47,150 = $61,750 single; $29,200 + $94,300 = $123,500 MFJ). The
+                optional <em>Bracket-Fill Adjustment</em> in Assumptions resizes the 12% portion of
+                that ceiling. Positive values extend the ceiling into the 22% bracket — pulling more
+                from Traditional now to preserve Roth balance for later. Negative values shrink it
+                toward the standard deduction — drawing more from Roth in lower-spending years.
+                0% (default) leaves the strategy unchanged.
+              </p>
+            </>
           )}
 
           <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 mt-4">
@@ -304,6 +317,17 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
             </code>
             <p className="text-gray-600 dark:text-gray-400">
               Initial withdrawal amount, adjusted for inflation each year.
+            </p>
+            <p className="text-gray-600 dark:text-gray-400 mt-3">
+              <strong>Variable SWR via buckets.</strong> The Safe Withdrawal Rate above is a
+              single global percentage. To model real-world spending — higher in early
+              "go-go" retirement years and lower later — you can define optional
+              <em> withdrawal rate buckets</em>, each spanning an age range with its own
+              rate. For each retirement year, the calculator looks up the bucket containing
+              that age (or falls back to the global SWR if no bucket covers it), then
+              computes <code>targetSpending = initialPortfolio × bucketRate × (1 + inflation)^yearsFromRetirement</code>.
+              Buckets are inclusive on both ends and may not overlap; gaps between buckets
+              are allowed and use the global SWR.
             </p>
           </div>
         </div>
@@ -425,6 +449,19 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
             : `Standard deduction of ${formatCurrency(standardDeduction)} is subtracted before applying brackets.`
           }
         </p>
+        {!isCanada && (
+          <p className="mt-3 text-sm text-gray-600 dark:text-gray-400">
+            <strong className="text-gray-800 dark:text-gray-200">Partial bracket indexing.</strong> Historically,
+            US federal tax bracket boundaries and the standard deduction have grown at roughly
+            <em> 50% of CPI inflation</em> over the last 60 years (with a 1–2 year lag). The calculator
+            applies this empirical pattern: in any retirement or pre-retirement year, the bracket
+            boundaries, standard deduction, and long-term capital-gains thresholds are scaled by
+            <code> (1 + 0.5 × inflationRate)<sup>yearsFromNow</sup></code>. The 12% bracket-fill ceiling in the
+            withdrawal strategy tracks the same scaling so "fill to top of 12% bracket" stays accurate.
+            With inflationRate = 0 the multiplier is 1.0 and tax math reverts to fixed 2024 brackets.
+            Canadian brackets and BPA are not indexed.
+          </p>
+        )}
       </section>
 
       {/* Provincial Tax Brackets (Canada only) */}
@@ -488,6 +525,74 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
                 ))}
               </tbody>
             </table>
+          </div>
+        </section>
+      )}
+
+      {/* Roth Conversions (US only) */}
+      {!isCanada && (
+        <section className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+            Roth Conversions
+          </h3>
+          <div className="prose prose-sm dark:prose-invert max-w-none text-gray-600 dark:text-gray-300 space-y-3">
+            <p>
+              A Roth conversion is a transfer from a deferred-tax account (Traditional IRA, Traditional 401(k))
+              to a Roth IRA / Roth 401(k). The converted amount is treated as ordinary income in the year of
+              conversion. Future growth and qualified withdrawals from the Roth are tax-free.
+            </p>
+            <p>
+              <strong>How the calculator models it.</strong> For each plan, at the end of each year between
+              <code> startAge </code>and<code> endAge </code>(inclusive), after that year's growth and
+              contributions/withdrawals are settled, the inflation-adjusted yearly amount is moved from
+              source to destination. If the source balance is insufficient, the conversion is silently
+              capped at the available balance.
+            </p>
+            <p>
+              <strong>Tax treatment during accumulation (pre-retirement).</strong> For each year a conversion
+              is active, the calculator computes federal + state tax twice — with and without the conversion
+              added to your projected ordinary income. The difference is recorded as that year's
+              "Conversion Tax Cost." Income is projected from your current annual income using your specified
+              income growth rate. Sum across all pre-retirement years yields the headline "Conversion Tax Cost"
+              in the summary.
+            </p>
+            <p>
+              <strong>Tax treatment during retirement.</strong> The conversion amount is added to that year's
+              ordinary income before federal + state tax is computed. The existing "Lifetime Taxes" already
+              reflects it. Conversions do <em>not</em> fund spending and do not reduce traditional withdrawals
+              taken to meet target spending.
+            </p>
+            <p>
+              <strong>The "Tax Change from Conversion" insight.</strong> Computed by running the simulation
+              twice — once with your plans, once with no conversion plans. This captures downstream effects
+              (reduced future RMDs, tax-free Roth growth) that a per-year cost alone misses.
+            </p>
+            <p>
+              <strong>The "Net Conversion Benefit" insight.</strong> The lifetime tax delta alone doesn't tell
+              the full story — conversions also shift terminal portfolio balance and lifetime after-tax
+              spending power. The net-benefit card combines all three flows from the same shadow simulation:
+              <code> (ΔFinal Balance) + (ΔLifetime After-Tax Income) − (Pre-Retirement Conversion Tax)</code>.
+              A positive number means converting was net-positive across the full life cycle. The breakdown
+              is shown when you expand the card. Caveat: the engine does not gross up retirement-year
+              withdrawals to cover the higher conversion-year taxes, so if a real-life user would pull more
+              from accounts to maintain their target after-tax spending, the metric overstates the benefit
+              (the extra withdrawals would shrink ΔFinal Balance further).
+            </p>
+            <p>
+              <strong>Withdrawal-bracket-fill interaction.</strong> The existing "fill the 12% bracket with
+              traditional withdrawals" strategy is unchanged and ignores conversions; your explicit conversion
+              plan is treated as the priority signal for tax planning that year.
+            </p>
+            <p>
+              <strong>Known simplifications:</strong>
+            </p>
+            <ul className="list-disc list-inside space-y-1">
+              <li>Conversions are transfers and do not trigger the 10% early-withdrawal penalty (matches IRS rules).</li>
+              <li>The 5-year rule on converted Roth amounts is not tracked.</li>
+              <li>Tax brackets start at 2024 values, then grow at 50% of the inflation rate per year (see Federal Tax Brackets section above for details).</li>
+              <li>Pre-retirement income is assumed to grow at your specified rate; bonuses, job changes, and
+                  other ordinary-income variability are not modeled.</li>
+            </ul>
           </div>
         </section>
       )}

@@ -169,6 +169,44 @@ export function IncomeStreamForm({ incomeStream, onSave, onCancel }: IncomeStrea
         </p>
       </div>
 
+      {formData.taxTreatment !== 'social_security' && (
+        <div>
+          <label className="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={formData.fixedPayment ?? false}
+              onChange={(e) => setFormData(prev => ({ ...prev, fixedPayment: e.target.checked }))}
+              className="mt-0.5"
+            />
+            <span>
+              <span className="font-medium">Fixed payment (no inflation adjustment)</span>
+              <span className="block text-gray-500 dark:text-gray-400 text-xs mt-0.5">
+                Use for fixed-payment annuities or pensions without a COLA. The monthly amount is treated as the actual nominal payment that never grows.
+              </span>
+            </span>
+          </label>
+        </div>
+      )}
+
+      {formData.taxTreatment === 'social_security' && (
+        <div>
+          <label className="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={formData.applySSReduction ?? false}
+              onChange={(e) => setFormData(prev => ({ ...prev, applySSReduction: e.target.checked }))}
+              className="mt-0.5"
+            />
+            <span>
+              <span className="font-medium">Apply 15% reduction starting 2032 (trust-fund shortfall)</span>
+              <span className="block text-gray-500 dark:text-gray-400 text-xs mt-0.5">
+                Per the 2024 SSA Trustees report, scheduled benefits could be cut ~17% in 2032 absent legislation. When checked, this stream's inflated benefit is reduced by 15% from calendar year 2032 onward.
+              </span>
+            </span>
+          </label>
+        </div>
+      )}
+
       <div className="flex justify-end gap-3 pt-4">
         <button
           type="button"
