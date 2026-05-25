@@ -294,7 +294,9 @@ export function calculateWithdrawals(
     targetSpending *= (1 + assumptions.inflationRate);
   }
 
-  // Calculate sustainable withdrawal amounts in today's dollars
+  // Sustainable withdrawal amounts at retirement, in nominal (future) dollars.
+  // Callers that present "today's dollars" must deflate by inflation over the
+  // years to retirement — see SummaryCards.
   const sustainableAnnualWithdrawal = totalPortfolio * assumptions.safeWithdrawalRate;
   const sustainableMonthlyWithdrawal = sustainableAnnualWithdrawal / 12;
 
