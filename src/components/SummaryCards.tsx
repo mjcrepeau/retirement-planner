@@ -22,9 +22,24 @@ function formatPercent(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
 }
 
+// Convert a future nominal amount to its present (today's-dollar) value.
+function presentValue(nominalAmount: number, yearsFromNow: number, inflationRate: number): number {
+  if (yearsFromNow <= 0) return nominalAmount;
+  return nominalAmount / Math.pow(1 + inflationRate, yearsFromNow);
+}
+
+// Build the "≈ $X today" secondary line. Returns undefined when nominal and
+// real round to the same displayed value (already retired, zero inflation),
+// so the card doesn't show a redundant duplicate of the primary.
+function todayHint(nominal: number, real: number, suffix = "in today's dollars"): string | undefined {
+  if (Math.round(nominal) === Math.round(real)) return undefined;
+  return `≈ ${formatCurrency(real)} ${suffix}`;
+}
+
 interface ExpandableStatCardProps {
   title: string;
   value: string;
+  secondaryValue?: string;
   subtitle?: string;
   color?: 'blue' | 'green' | 'amber' | 'red' | 'purple' | 'teal';
   formula?: React.ReactNode;
@@ -34,6 +49,7 @@ interface ExpandableStatCardProps {
 function ExpandableStatCard({
   title,
   value,
+  secondaryValue,
   subtitle,
   color = 'blue',
   formula,
@@ -94,6 +110,9 @@ function ExpandableStatCard({
           )}
         </div>
         <p className={`text-2xl font-bold ${valueColors[color]}`}>{value}</p>
+        {secondaryValue && (
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{secondaryValue}</p>
+        )}
         {subtitle && <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{subtitle}</p>}
       </div>
 
@@ -161,14 +180,51 @@ export function SummaryCards({
   const yearsToRetirement = Math.max(0, profile.retirementAge - profile.currentAge);
   const retirementYears = Math.max(0, profile.lifeExpectancy - profile.retirementAge);
 
+  // Deflate nominal future-dollar values to today's purchasing power.
+  // The model runs in nominal dollars (returns compound at the nominal rate,
+  // target spending inflates each year). Summary cards display real values
+  // so the magnitudes are meaningful to the user today.
+  const inflationRate = assumptions.inflationRate;
+  const totalAtRetirementReal = presentValue(totalAtRetirement, yearsToRetirement, inflationRate);
+  const sustainableMonthlyWithdrawalReal = presentValue(sustainableMonthlyWithdrawal, yearsToRetirement, inflationRate);
+  const sustainableAnnualWithdrawalReal = presentValue(sustainableAnnualWithdrawal, yearsToRetirement, inflationRate);
+  const breakdownByGroupReal: Record<string, number> = {};
+  Object.entries(breakdownByGroup).forEach(([id, amount]) => {
+    breakdownByGroupReal[id] = presentValue(amount, yearsToRetirement, inflationRate);
+  });
+  // Lifetime taxes: deflate each year's nominal tax to today's dollars, then sum.
+  // Using a single deflator on the nominal total would understate (older years
+  // weigh less than younger ones); per-year is the correct present-value sum.
+  const lifetimeTaxesReal = yearlyWithdrawals.reduce(
+    (sum, y) => sum + presentValue(y.totalTax, y.age - profile.currentAge, inflationRate),
+    0
+  );
+  const lifetimeFederalTaxReal = yearlyWithdrawals.reduce(
+    (sum, y) => sum + presentValue(y.federalTax, y.age - profile.currentAge, inflationRate),
+    0
+  );
+  const lifetimeStateTaxReal = yearlyWithdrawals.reduce(
+    (sum, y) => sum + presentValue(y.stateTax, y.age - profile.currentAge, inflationRate),
+    0
+  );
+
+  // Nominal federal and state totals (used to surface the breakdown that sums
+  // back to the headline lifetimeTaxesPaid when combined with penalties).
+  const lifetimeFederalTax = yearlyWithdrawals.reduce((sum, y) => sum + y.federalTax, 0);
+  const lifetimeStateTax = yearlyWithdrawals.reduce((sum, y) => sum + y.stateTax, 0);
+
   // Calculate average effective tax rate
   const avgEffectiveTaxRate = yearlyWithdrawals.length > 0
     ? yearlyWithdrawals.reduce((sum, y) => sum + (y.grossIncome > 0 ? y.totalTax / y.grossIncome : 0), 0) / yearlyWithdrawals.length
     : 0;
 
-  // Calculate lifetime penalties
+  // Lifetime early-withdrawal penalties, nominal and real.
   const lifetimePenalties = yearlyWithdrawals.reduce(
     (sum, year) => sum + year.totalPenalties,
+    0
+  );
+  const lifetimePenaltiesReal = yearlyWithdrawals.reduce(
+    (sum, y) => sum + presentValue(y.totalPenalties, y.age - profile.currentAge, inflationRate),
     0
   );
 
@@ -205,21 +261,26 @@ export function SummaryCards({
           <ExpandableStatCard
             title="Total Portfolio"
             value={formatCurrency(totalAtRetirement)}
+            secondaryValue={todayHint(totalAtRetirement, totalAtRetirementReal)}
             color="blue"
             formula={`Sum of all account balances after ${yearsToRetirement} years of growth`}
             details={
               <div>
                 <p className="font-medium mb-1">Breakdown by account type:</p>
-                <ul className="space-y-0.5">
+                <ul className="space-y-0.5 mb-2">
                   {accountGroupings.filter(g => breakdownByGroup[g.id] > 0).map(group => (
                     <li key={group.id}>{group.label}: {formatCurrency(breakdownByGroup[group.id] || 0)}</li>
                   ))}
                 </ul>
+                <p className="text-gray-500 dark:text-gray-400 italic">
+                  In today's dollars: {formatCurrency(totalAtRetirementReal)} (deflated at {formatPercent(inflationRate)} inflation over {yearsToRetirement} years).
+                </p>
               </div>
             }
           />
           {accountGroupings.filter(g => breakdownByGroup[g.id] > 0).map((group) => {
             const amount = breakdownByGroup[group.id] || 0;
+            const amountReal = breakdownByGroupReal[group.id] || 0;
             const percentage = totalAtRetirement > 0 ? (amount / totalAtRetirement) * 100 : 0;
             // Map group colors to card colors
             const colorMap: Record<string, 'blue' | 'green' | 'amber' | 'purple' | 'teal'> = {
@@ -236,6 +297,7 @@ export function SummaryCards({
                 key={group.id}
                 title={group.label}
                 value={formatCurrency(amount)}
+                secondaryValue={todayHint(amount, amountReal, 'today')}
                 subtitle={`${percentage.toFixed(0)}% of portfolio`}
                 color={cardColor}
                 formula={`Sum of ${group.accountTypes.map(t => countryConfig.getAccountTypeLabel(t)).join(' + ')} balances`}
@@ -253,17 +315,17 @@ export function SummaryCards({
           <ExpandableStatCard
             title="Monthly Withdrawal"
             value={formatCurrency(sustainableMonthlyWithdrawal)}
-            subtitle="In today's dollars"
+            secondaryValue={todayHint(sustainableMonthlyWithdrawal, sustainableMonthlyWithdrawalReal)}
             color="green"
             formula={`${formatCurrency(totalAtRetirement)} × ${formatPercent(assumptions.safeWithdrawalRate)} ÷ 12`}
             details={
               <div>
                 <p className="mb-1">
                   Based on the {formatPercent(assumptions.safeWithdrawalRate)} safe withdrawal rate applied to your
-                  {' '}{formatCurrency(totalAtRetirement)} portfolio.
+                  {' '}{formatCurrency(totalAtRetirement)} portfolio at retirement.
                 </p>
                 <p>
-                  Actual withdrawals will be adjusted for {formatPercent(assumptions.inflationRate)} annual inflation.
+                  Actual withdrawals will be adjusted for {formatPercent(assumptions.inflationRate)} annual inflation. In today's-dollar terms, this stays roughly constant year over year.
                 </p>
               </div>
             }
@@ -271,7 +333,7 @@ export function SummaryCards({
           <ExpandableStatCard
             title="Annual Withdrawal"
             value={formatCurrency(sustainableAnnualWithdrawal)}
-            subtitle="In today's dollars"
+            secondaryValue={todayHint(sustainableAnnualWithdrawal, sustainableAnnualWithdrawalReal)}
             color="green"
             formula={`${formatCurrency(totalAtRetirement)} × ${formatPercent(assumptions.safeWithdrawalRate)}`}
             details={
@@ -280,10 +342,10 @@ export function SummaryCards({
                   = {formatCurrency(totalAtRetirement)} × {formatPercent(assumptions.safeWithdrawalRate)}
                 </p>
                 <p className="mb-1">
-                  = {formatCurrency(sustainableAnnualWithdrawal)}
+                  = {formatCurrency(sustainableAnnualWithdrawal)} at retirement
                 </p>
                 <p className="text-gray-500 dark:text-gray-400 italic">
-                  This is your initial withdrawal amount. Each year it increases by the inflation rate ({formatPercent(assumptions.inflationRate)}).
+                  This is your initial withdrawal amount. Each year it increases by the inflation rate ({formatPercent(assumptions.inflationRate)}). In today's-dollar terms, buying power stays roughly constant.
                 </p>
               </div>
             }
@@ -317,6 +379,7 @@ export function SummaryCards({
           <ExpandableStatCard
             title="Lifetime Taxes"
             value={formatCurrency(lifetimeTaxesPaid)}
+            secondaryValue={todayHint(lifetimeTaxesPaid, lifetimeTaxesReal)}
             subtitle="Total taxes in retirement"
             color="purple"
             formula={country === 'CA'
@@ -328,13 +391,24 @@ export function SummaryCards({
                   Over {retirementYears} years of retirement:
                 </p>
                 <ul className="space-y-0.5 mb-2">
-                  <li>Federal taxes: {formatCurrency(yearlyWithdrawals.reduce((sum, y) => sum + y.federalTax, 0))}</li>
-                  <li>{country === 'CA' ? 'Provincial' : 'State'} taxes: {formatCurrency(yearlyWithdrawals.reduce((sum, y) => sum + y.stateTax, 0))}</li>
+                  <li>Federal taxes: {formatCurrency(lifetimeFederalTax)}</li>
+                  <li>{country === 'CA' ? 'Provincial' : 'State'} taxes: {formatCurrency(lifetimeStateTax)}</li>
+                  {lifetimePenalties > 0 && (
+                    <li>Early withdrawal penalties: {formatCurrency(lifetimePenalties)}</li>
+                  )}
                 </ul>
-                <p>
+                <p className="mb-1">
                   Average effective tax rate: {formatPercent(avgEffectiveTaxRate)}
                 </p>
-                <p className="text-gray-500 dark:text-gray-400 italic mt-1">
+                {todayHint(lifetimeTaxesPaid, lifetimeTaxesReal) && (
+                  <p className="mb-1 text-gray-500 dark:text-gray-400 italic">
+                    In today's dollars (per-year deflation): federal {formatCurrency(lifetimeFederalTaxReal)}, {country === 'CA' ? 'provincial' : 'state'} {formatCurrency(lifetimeStateTaxReal)}
+                    {lifetimePenalties > 0 && (
+                      <>, penalties {formatCurrency(lifetimePenaltiesReal)}</>
+                    )}.
+                  </p>
+                )}
+                <p className="text-gray-500 dark:text-gray-400 italic">
                   Standard deduction: {formatCurrency(standardDeduction)} ({profile.filingStatus === 'married_filing_jointly' ? 'MFJ' : 'Single'})
                 </p>
               </div>
