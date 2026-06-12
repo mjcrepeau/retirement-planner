@@ -60,6 +60,7 @@ The withdrawal algorithm follows a tax-efficient strategy:
 5. **Roth Withdrawals**: Tax-free withdrawals for remaining needs
 6. **Taxable Account Withdrawals**: With capital gains tracking
 7. **HSA**: Used last, tax-free for qualified medical expenses
+8. **Early Withdrawal Fallback**: If all available accounts are exhausted, withdraws from accounts before their configured start age, incurring early-withdrawal penalties (10% for US traditional accounts before age 59.5)
 
 ### Tax Calculations
 
@@ -73,7 +74,7 @@ The withdrawal algorithm follows a tax-efficient strategy:
 #### Canada
 - 2024 Federal tax brackets with Basic Personal Amount
 - Provincial tax rates for all provinces and territories
-- Capital gains inclusion rate (50% or 66.67% for gains over $250k)
+- Capital gains inclusion rate (flat 50%, stacked on ordinary income)
 - CPP/OAS benefit integration
 
 ### Visualizations
@@ -86,8 +87,8 @@ The withdrawal algorithm follows a tax-efficient strategy:
 ### Screenshots
 ![Graph showing cash accumulation over working years](screenshots/accumulation.png "Accumulation graph")
 ![Graph showing account drawdown over retirement years](screenshots/drawdown.png "Drawdown graph")
-![Graph showing retirement invome year by year](screenshots/income.png "Income graph")
-![Graph showing retirement taxe burden year by year](screenshots/taxes.png "Tax burden graph")
+![Graph showing retirement income year by year](screenshots/income.png "Income graph")
+![Graph showing retirement tax burden year by year](screenshots/taxes.png "Tax burden graph")
 ![Table showing yearly income and spending calculations](screenshots/yearly.png "Yearly income table")
 
 
@@ -248,6 +249,9 @@ For each year of retirement:
 - RMDs follow the IRS Uniform Lifetime Table
 - Income streams and government benefits grow with inflation
 - Tax brackets are 2024 values (not inflation-adjusted)
+- CPP, OAS, and Social Security are modeled as 100% taxable income
+- The spending target is pre-tax; taxes are paid out of withdrawals rather than added on top
+- RMD/RRIF withdrawals in excess of the spending need are counted as income for that year rather than reinvested
 
 ## Configuration
 
@@ -260,8 +264,8 @@ For each year of retirement:
 | Inflation Rate | 3% |
 | Safe Withdrawal Rate | 4% |
 | Retirement Return Rate | 5% |
-| CPP Benefit (Canada) | $30,000/year |
-| CPP Start Age (Canada) | 67 |
+| CPP Benefit (Canada) | $16,375/year (CPP maximum at 65) |
+| CPP Start Age (Canada) | 65 |
 
 ### Account Defaults
 | Setting | Default |
@@ -286,7 +290,7 @@ Tests cover:
 - Canadian account type recognition
 - Edge cases (zero balances, long retirements, etc.)
 
-**Current test count: 166 tests**
+Run `npm test` for the full suite and current test count.
 
 ## Credits
 
