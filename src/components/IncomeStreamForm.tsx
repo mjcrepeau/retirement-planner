@@ -104,7 +104,13 @@ export function IncomeStreamForm({ incomeStream, onSave, onCancel }: IncomeStrea
             defaultValue={0}
             className={errors.monthlyAmount ? inputErrorClassName : inputClassName}
           />
-          {errors.monthlyAmount && <p className="text-red-500 text-xs mt-1">{errors.monthlyAmount}</p>}
+          {errors.monthlyAmount ? (
+            <p className="text-red-500 text-xs mt-1">{errors.monthlyAmount}</p>
+          ) : (
+            <p className="text-gray-500 dark:text-gray-400 text-xs mt-1">
+              In today's dollars — automatically adjusted for inflation to your retirement years.
+            </p>
+          )}
         </div>
 
         <div>
