@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Account, Profile, Assumptions, IncomeStream } from './types';
 import { DEFAULT_PROFILE, DEFAULT_ASSUMPTIONS, DEFAULT_INCOME_STREAMS } from './utils/constants';
 import { useRetirementCalc } from './hooks/useRetirementCalc';
@@ -103,7 +103,7 @@ type TabType = 'accumulation' | 'retirement' | 'summary' | 'methodology';
 // Inner app component that uses the country context
 function AppContent() {
   // Country context
-  const { config: countryConfig } = useCountry();
+  const { country, config: countryConfig } = useCountry();
 
   // Load profile first (needed for account normalization)
   const [profile, setProfile, resetProfile] = useLocalStorage<Profile>(
@@ -141,6 +141,49 @@ function AppContent() {
     'retirement-planner-income-streams',
     DEFAULT_INCOME_STREAMS
   );
+
+  // One-time migration: pre-Income-Streams US profiles may have legacy
+  // socialSecurityBenefit/socialSecurityStartAge values set (those fields are
+  // now CPP-only for Canada). Convert any such legacy US Social Security into
+  // an income stream so it isn't double-counted with the default SS stream,
+  // then clear the legacy fields from the persisted profile.
+  useEffect(() => {
+    const isUS = profile.country === 'US' || (profile.country === undefined && country === 'US');
+    if (!isUS) return;
+    if (!profile.socialSecurityBenefit || profile.socialSecurityBenefit <= 0) return;
+
+    const legacyBenefit = profile.socialSecurityBenefit;
+    const legacyStartAge = profile.socialSecurityStartAge ?? 67;
+
+    // Use a functional update so the "does a SS stream already exist?" check
+    // sees the latest state, even under React strict-mode double-invocation.
+    setIncomeStreams(prev => {
+      const hasSocialSecurityStream = prev.some(s => s.taxTreatment === 'social_security');
+      if (hasSocialSecurityStream) return prev;
+      return [
+        ...prev,
+        {
+          id: uuidv4(),
+          name: 'Social Security',
+          monthlyAmount: legacyBenefit / 12,
+          startAge: legacyStartAge,
+          taxTreatment: 'social_security',
+        },
+      ];
+    });
+
+    // Clear the legacy fields so this migration only runs once.
+    setProfile(prev => {
+      if (prev.socialSecurityBenefit === undefined && prev.socialSecurityStartAge === undefined) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next.socialSecurityBenefit;
+      delete next.socialSecurityStartAge;
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile.country, profile.socialSecurityBenefit, profile.socialSecurityStartAge, country]);
 
   // Dark mode
   const [isDarkMode, toggleDarkMode] = useDarkMode();
@@ -223,7 +266,7 @@ function AppContent() {
               Reset All Data?
             </h3>
             <p className="text-gray-600 dark:text-gray-300 mb-4">
-              This will clear all your saved accounts, profile settings, and assumptions.
+              This will clear all your saved accounts, profile settings, income streams, and assumptions.
               This action cannot be undone.
             </p>
             <div className="flex justify-end gap-3">
@@ -495,6 +538,7 @@ function App() {
     localStorage.setItem('retirement-planner-profile', JSON.stringify({
       ...DEFAULT_PROFILE,
       ...defaultProfile,
+      country: newCountry,
     }));
 
     // Reset income streams — default SS for US, empty for Canada

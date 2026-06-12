@@ -138,8 +138,8 @@ export function ProfileForm({ profile, onChange }: ProfileFormProps) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Annual Benefit (today's $)
-                <Tooltip text="Your estimated annual CPP benefit in today's dollars" />
+                Annual Benefit at Age 65 (today's $)
+                <Tooltip text="Your estimated annual CPP benefit at age 65, in today's dollars. If you start CPP earlier or later, this amount is automatically adjusted (−0.6%/month before 65, +0.7%/month after)." />
               </label>
               <NumberInput
                 value={profile.socialSecurityBenefit || 0}

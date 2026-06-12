@@ -10,10 +10,10 @@ interface SummaryCardsProps {
   retirementResult: RetirementResult;
 }
 
-function formatCurrency(value: number): string {
-  return new Intl.NumberFormat('en-US', {
+function formatCurrencyWithCode(value: number, currency: string = 'USD'): string {
+  return new Intl.NumberFormat(currency === 'CAD' ? 'en-CA' : 'en-US', {
     style: 'currency',
-    currency: 'USD',
+    currency: currency,
     maximumFractionDigits: 0,
   }).format(value);
 }
@@ -31,9 +31,9 @@ function presentValue(nominalAmount: number, yearsFromNow: number, inflationRate
 // Build the "≈ $X today" secondary line. Returns undefined when nominal and
 // real round to the same displayed value (already retired, zero inflation),
 // so the card doesn't show a redundant duplicate of the primary.
-function todayHint(nominal: number, real: number, suffix = "in today's dollars"): string | undefined {
+function todayHintWithCode(nominal: number, real: number, currency: string, suffix = "in today's dollars"): string | undefined {
   if (Math.round(nominal) === Math.round(real)) return undefined;
-  return `≈ ${formatCurrency(real)} ${suffix}`;
+  return `≈ ${formatCurrencyWithCode(real, currency)} ${suffix}`;
 }
 
 interface ExpandableStatCardProps {
@@ -144,6 +144,13 @@ export function SummaryCards({
   retirementResult,
 }: SummaryCardsProps) {
   const { country, config: countryConfig } = useCountry();
+  const isCanada = country === 'CA';
+  const currency = isCanada ? 'CAD' : 'USD';
+  // Bind formatCurrency/todayHint to the active country's currency so call
+  // sites below don't need to thread `currency` through individually.
+  const formatCurrency = (value: number) => formatCurrencyWithCode(value, currency);
+  const todayHint = (nominal: number, real: number, suffix?: string) =>
+    todayHintWithCode(nominal, real, currency, suffix);
   const { totalAtRetirement, breakdownByGroup } = accumulationResult;
   const accountGroupings = countryConfig.getAccountGroupings();
   const {
@@ -383,8 +390,8 @@ export function SummaryCards({
             subtitle="Total taxes in retirement"
             color="purple"
             formula={country === 'CA'
-              ? 'Sum of federal + provincial taxes across all retirement years'
-              : 'Sum of federal + state taxes across all retirement years'}
+              ? 'Sum of federal + provincial taxes + early withdrawal penalties across all retirement years'
+              : 'Sum of federal + state taxes + early withdrawal penalties across all retirement years'}
             details={
               <div>
                 <p className="mb-1">
@@ -408,9 +415,11 @@ export function SummaryCards({
                     )}.
                   </p>
                 )}
-                <p className="text-gray-500 dark:text-gray-400 italic">
-                  Standard deduction: {formatCurrency(standardDeduction)} ({profile.filingStatus === 'married_filing_jointly' ? 'MFJ' : 'Single'})
-                </p>
+                {!isCanada && (
+                  <p className="text-gray-500 dark:text-gray-400 italic">
+                    Standard deduction: {formatCurrency(standardDeduction)} ({profile.filingStatus === 'married_filing_jointly' ? 'MFJ' : 'Single'})
+                  </p>
+                )}
               </div>
             }
           />
@@ -474,7 +483,7 @@ export function SummaryCards({
           />
           {profile.socialSecurityBenefit && profile.socialSecurityStartAge ? (
             <ExpandableStatCard
-              title="Social Security"
+              title={isCanada ? 'CPP' : 'Social Security'}
               value={formatCurrency(profile.socialSecurityBenefit)}
               subtitle={`Starting at age ${profile.socialSecurityStartAge}`}
               color="teal"
@@ -482,10 +491,12 @@ export function SummaryCards({
               details={
                 <div>
                   <p className="mb-1">
-                    Social Security income is assumed to grow with inflation ({formatPercent(assumptions.inflationRate)}/year).
+                    {isCanada ? 'CPP' : 'Social Security'} income is assumed to grow with inflation ({formatPercent(assumptions.inflationRate)}/year).
                   </p>
                   <p>
-                    85% of Social Security is included as taxable income (maximum taxable portion).
+                    {isCanada
+                      ? 'CPP is fully taxable as ordinary income.'
+                      : '85% of Social Security is included as taxable income (maximum taxable portion).'}
                   </p>
                 </div>
               }

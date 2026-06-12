@@ -1,16 +1,17 @@
 import { useState } from 'react';
 import { Account, AccumulationResult, getTaxTreatment } from '../types';
 import { is401k } from '../types';
+import { useCountry } from '../contexts/CountryContext';
 
 interface DataTableAccumulationProps {
   accounts: Account[];
   result: AccumulationResult;
 }
 
-function formatCurrency(value: number): string {
-  return new Intl.NumberFormat('en-US', {
+function formatCurrencyWithCode(value: number, currency: string = 'USD'): string {
+  return new Intl.NumberFormat(currency === 'CAD' ? 'en-CA' : 'en-US', {
     style: 'currency',
-    currency: 'USD',
+    currency: currency,
     maximumFractionDigits: 0,
   }).format(value);
 }
@@ -18,6 +19,10 @@ function formatCurrency(value: number): string {
 type ViewMode = 'summary' | 'balances' | 'contributions';
 
 export function DataTableAccumulation({ accounts, result }: DataTableAccumulationProps) {
+  const { country } = useCountry();
+  const currency = country === 'CA' ? 'CAD' : 'USD';
+  const formatCurrency = (value: number) => formatCurrencyWithCode(value, currency);
+
   const [isExpanded, setIsExpanded] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('summary');
 
