@@ -65,14 +65,14 @@ The withdrawal algorithm follows a tax-efficient strategy:
 ### Tax Calculations
 
 #### United States
-- 2024 Federal income tax brackets (Single and Married Filing Jointly)
+- 2026 Federal income tax brackets (Single and Married Filing Jointly)
 - Long-term capital gains rates with 0%/15%/20% brackets
 - State tax rate configuration
 - Standard deduction applied automatically
 - Social Security taxation (85% taxable)
 
 #### Canada
-- 2024 Federal tax brackets with Basic Personal Amount
+- 2026 Federal tax brackets with Basic Personal Amount
 - Provincial tax rates for all provinces and territories
 - Capital gains inclusion rate (flat 50%, stacked on ordinary income)
 - CPP/OAS benefit integration
@@ -97,7 +97,7 @@ Full visibility into how every number is calculated:
 
 - **Methodology Tab**: Complete reference documentation including:
   - All formulas used in accumulation and withdrawal phases
-  - 2024 federal tax brackets (Single and MFJ)
+  - 2026 federal tax brackets (Single and MFJ)
   - Long-term capital gains rate tables
   - IRS Required Minimum Distribution (RMD) table
   - Tax-optimized withdrawal strategy explanation
@@ -248,7 +248,7 @@ For each year of retirement:
 - Contributions are made at year-end
 - RMDs follow the IRS Uniform Lifetime Table
 - Income streams and government benefits grow with inflation
-- Tax brackets are 2024 values (not inflation-adjusted)
+- Tax brackets are 2026 values (not inflation-adjusted)
 - CPP and OAS are modeled as 100% taxable income; US Social Security income streams are 85% taxable (maximum portion)
 - The spending target is pre-tax; taxes are paid out of withdrawals rather than added on top
 - RMD/RRIF withdrawals in excess of the spending need are counted as income for that year rather than reinvested

@@ -418,7 +418,7 @@ function performTaxOptimizedWithdrawal(
   const filingStatus = profile.filingStatus || 'single';
   const targetOrdinaryIncome = countryConfig
     ? countryConfig.getLowBracketFillTarget(filingStatus)
-    : getStandardDeduction(filingStatus) + (filingStatus === 'married_filing_jointly' ? 94300 : 47150);
+    : getStandardDeduction(filingStatus) + (filingStatus === 'married_filing_jointly' ? 100800 : 50400);
   const currentOrdinaryIncome = result.traditionalWithdrawal +
     (nonPortfolioTaxableIncome || 0);
   const roomInBracket = Math.max(0, targetOrdinaryIncome - currentOrdinaryIncome);

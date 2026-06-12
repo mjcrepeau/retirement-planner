@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 // RMD table/divisor are defined canonically in src/countries/usa/constants.ts.
 // Re-exported here so existing imports throughout the app continue to work.
 export {
+  TAX_DATA_YEAR,
   TAX_BRACKETS_MFJ,
   TAX_BRACKETS_SINGLE,
   STANDARD_DEDUCTION_MFJ,

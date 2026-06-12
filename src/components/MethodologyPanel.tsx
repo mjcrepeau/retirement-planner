@@ -1,6 +1,7 @@
 import { Profile, Assumptions } from '../types';
 import { useCountry } from '../contexts/CountryContext';
 import {
+  TAX_DATA_YEAR,
   TAX_BRACKETS_MFJ,
   TAX_BRACKETS_SINGLE,
   STANDARD_DEDUCTION_MFJ,
@@ -11,6 +12,7 @@ import {
   RMD_START_AGE,
 } from '../utils/constants';
 import {
+  TAX_DATA_YEAR as CA_TAX_DATA_YEAR,
   FEDERAL_TAX_BRACKETS as CA_FEDERAL_BRACKETS,
   FEDERAL_BASIC_PERSONAL_AMOUNT as CA_BASIC_PERSONAL,
   PROVINCIAL_TAX_BRACKETS,
@@ -271,7 +273,7 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
                 <div>
                   <strong className="text-gray-800 dark:text-gray-200">Fill 12% Tax Bracket</strong>
                   <p className="text-gray-600 dark:text-gray-400">
-                    Additional traditional withdrawals to fill the 12% bracket (up to {formatCurrency(standardDeduction + (isMarried ? 94300 : 47150))} total ordinary income).
+                    Additional traditional withdrawals to fill the 12% bracket (up to {formatCurrency(standardDeduction + (isMarried ? 100800 : 50400))} total ordinary income).
                   </p>
                 </div>
               </li>
@@ -411,8 +413,8 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
       <section className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
           {isCanada
-            ? '2024 Canadian Federal Tax Brackets'
-            : `2024 Federal Tax Brackets (${isMarried ? 'Married Filing Jointly' : 'Single'})`
+            ? `${CA_TAX_DATA_YEAR} Canadian Federal Tax Brackets`
+            : `${TAX_DATA_YEAR} Federal Tax Brackets (${isMarried ? 'Married Filing Jointly' : 'Single'})`
           }
         </h3>
         <div className="overflow-x-auto">
@@ -449,7 +451,7 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
       {isCanada && (
         <section className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-            2024 Provincial Tax Brackets ({provinceName})
+            {CA_TAX_DATA_YEAR} Provincial Tax Brackets ({provinceName})
           </h3>
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
@@ -483,7 +485,7 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
       {!isCanada && (
         <section className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-            2024 Long-Term Capital Gains Rates ({isMarried ? 'Married Filing Jointly' : 'Single'})
+            {TAX_DATA_YEAR} Long-Term Capital Gains Rates ({isMarried ? 'Married Filing Jointly' : 'Single'})
           </h3>
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
@@ -642,7 +644,7 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
         <ul className="space-y-2 text-sm text-amber-700 dark:text-amber-300">
           <li className="flex gap-2">
             <span className="flex-shrink-0">*</span>
-            <span>Tax brackets are for 2024 and don't adjust for inflation in future years.</span>
+            <span>Tax brackets are for {isCanada ? CA_TAX_DATA_YEAR : TAX_DATA_YEAR} and don't adjust for inflation in future years.</span>
           </li>
           {isCanada ? (
             <>

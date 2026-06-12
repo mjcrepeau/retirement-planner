@@ -108,7 +108,7 @@ export const USConfig: CountryConfig = {
   getLowBracketFillTarget: (filingStatus?: string): number => {
     // Standard deduction + top of the 12% bracket gives good tax efficiency
     const standardDeduction = getStandardDeduction(filingStatus);
-    const bracket12Max = filingStatus === 'married_filing_jointly' ? 94300 : 47150;
+    const bracket12Max = filingStatus === 'married_filing_jointly' ? 100800 : 50400;
     return standardDeduction + bracket12Max;
   },
 

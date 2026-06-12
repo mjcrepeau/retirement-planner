@@ -179,7 +179,7 @@ export function ProfileForm({ profile, onChange }: ProfileFormProps) {
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Annual Benefit (today's $)
-                <Tooltip text="Your estimated annual OAS benefit in today's dollars. Max is ~$9,000/year in 2024." />
+                <Tooltip text="Your estimated annual OAS benefit in today's dollars. Max is ~$8,900/year in 2026." />
               </label>
               <NumberInput
                 value={profile.secondaryBenefitAmount || 0}

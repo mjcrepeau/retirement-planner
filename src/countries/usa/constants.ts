@@ -1,42 +1,46 @@
 import type { TaxBracket, RMDEntry } from '../../types';
 
-// 2024 Federal Tax Brackets - Married Filing Jointly
+// The tax year these US federal constants reflect. Update this alongside the
+// brackets/deductions below when refreshing to a new tax year.
+export const TAX_DATA_YEAR = 2026;
+
+// 2026 Federal Tax Brackets - Married Filing Jointly
 export const TAX_BRACKETS_MFJ: TaxBracket[] = [
-  { min: 0, max: 23200, rate: 0.10 },
-  { min: 23200, max: 94300, rate: 0.12 },
-  { min: 94300, max: 201050, rate: 0.22 },
-  { min: 201050, max: 383900, rate: 0.24 },
-  { min: 383900, max: 487450, rate: 0.32 },
-  { min: 487450, max: 731200, rate: 0.35 },
-  { min: 731200, max: Infinity, rate: 0.37 },
+  { min: 0, max: 24800, rate: 0.10 },
+  { min: 24800, max: 100800, rate: 0.12 },
+  { min: 100800, max: 211400, rate: 0.22 },
+  { min: 211400, max: 403550, rate: 0.24 },
+  { min: 403550, max: 512450, rate: 0.32 },
+  { min: 512450, max: 768700, rate: 0.35 },
+  { min: 768700, max: Infinity, rate: 0.37 },
 ];
 
-// 2024 Federal Tax Brackets - Single
+// 2026 Federal Tax Brackets - Single
 export const TAX_BRACKETS_SINGLE: TaxBracket[] = [
-  { min: 0, max: 11600, rate: 0.10 },
-  { min: 11600, max: 47150, rate: 0.12 },
-  { min: 47150, max: 100525, rate: 0.22 },
-  { min: 100525, max: 191950, rate: 0.24 },
-  { min: 191950, max: 243725, rate: 0.32 },
-  { min: 243725, max: 609350, rate: 0.35 },
-  { min: 609350, max: Infinity, rate: 0.37 },
+  { min: 0, max: 12400, rate: 0.10 },
+  { min: 12400, max: 50400, rate: 0.12 },
+  { min: 50400, max: 105700, rate: 0.22 },
+  { min: 105700, max: 201775, rate: 0.24 },
+  { min: 201775, max: 256225, rate: 0.32 },
+  { min: 256225, max: 640600, rate: 0.35 },
+  { min: 640600, max: Infinity, rate: 0.37 },
 ];
 
-// 2024 Standard Deductions
-export const STANDARD_DEDUCTION_MFJ = 29200;
-export const STANDARD_DEDUCTION_SINGLE = 14600;
+// 2026 Standard Deductions (reflects One Big Beautiful Bill Act increases)
+export const STANDARD_DEDUCTION_MFJ = 32200;
+export const STANDARD_DEDUCTION_SINGLE = 16100;
 
-// Long-term capital gains rates (2024)
+// Long-term capital gains rates (2026)
 export const CAPITAL_GAINS_BRACKETS_MFJ: TaxBracket[] = [
-  { min: 0, max: 94050, rate: 0 },
-  { min: 94050, max: 583750, rate: 0.15 },
-  { min: 583750, max: Infinity, rate: 0.20 },
+  { min: 0, max: 98900, rate: 0 },
+  { min: 98900, max: 613700, rate: 0.15 },
+  { min: 613700, max: Infinity, rate: 0.20 },
 ];
 
 export const CAPITAL_GAINS_BRACKETS_SINGLE: TaxBracket[] = [
-  { min: 0, max: 47025, rate: 0 },
-  { min: 47025, max: 518900, rate: 0.15 },
-  { min: 518900, max: Infinity, rate: 0.20 },
+  { min: 0, max: 49450, rate: 0 },
+  { min: 49450, max: 545500, rate: 0.15 },
+  { min: 545500, max: Infinity, rate: 0.20 },
 ];
 
 // RMD starts at age 73 (SECURE 2.0 Act)

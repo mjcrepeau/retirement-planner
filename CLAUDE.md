@@ -28,7 +28,7 @@ This is a React retirement planning calculator that projects portfolio growth an
    - Falls back to additional traditional withdrawals if needed
    - Final fallback: if all available accounts are exhausted, withdraws from accounts before their configured start age, incurring early-withdrawal penalties (10% for US traditional accounts before age 59.5)
 
-3. **Tax Calculations** (`src/utils/taxes.ts`): Each country exposes a consolidated `calculateYearlyTaxes` that computes federal + regional tax including capital gains (US: 2024 brackets with 0%/15%/20% capital gains rates; Canada: 50% capital gains inclusion stacked on ordinary income). CPP and OAS are modeled as 100% taxable; US Social Security income streams are 85% taxable (maximum portion).
+3. **Tax Calculations** (`src/utils/taxes.ts`): Each country exposes a consolidated `calculateYearlyTaxes` that computes federal + regional tax including capital gains (US: 2026 brackets with 0%/15%/20% capital gains rates; Canada: 50% capital gains inclusion stacked on ordinary income). CPP and OAS are modeled as 100% taxable; US Social Security income streams are 85% taxable (maximum portion).
 
 ### Data Flow
 
