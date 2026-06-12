@@ -249,7 +249,7 @@ For each year of retirement:
 - RMDs follow the IRS Uniform Lifetime Table
 - Income streams and government benefits grow with inflation
 - Tax brackets are 2024 values (not inflation-adjusted)
-- CPP, OAS, and Social Security are modeled as 100% taxable income
+- CPP and OAS are modeled as 100% taxable income; US Social Security income streams are 85% taxable (maximum portion)
 - The spending target is pre-tax; taxes are paid out of withdrawals rather than added on top
 - RMD/RRIF withdrawals in excess of the spending need are counted as income for that year rather than reinvested
 
