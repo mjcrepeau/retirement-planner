@@ -94,6 +94,18 @@ export const RMD_TABLE: RMDEntry[] = [
   { age: 120, divisor: 2.0 },
 ];
 
+/**
+ * Get the IRS Uniform Lifetime Table divisor for a given age
+ */
+export function getRMDDivisor(age: number): number {
+  if (age < RMD_START_AGE) return 0;
+  const entry = RMD_TABLE.find(e => e.age === age);
+  if (entry) return entry.divisor;
+  // For ages beyond the table, use the last value
+  if (age > 120) return 2.0;
+  return 0;
+}
+
 // US States
 export const US_STATES = [
   { code: 'AL', name: 'Alabama' },
