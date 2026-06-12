@@ -188,14 +188,7 @@ export const OAS_CLAWBACK_THRESHOLD = 86912; // 2024 threshold
 export const OAS_CLAWBACK_RATE = 0.15; // 15% recovery tax
 export const OAS_CLAWBACK_ELIMINATION = 142609; // Full elimination threshold
 
-// Capital Gains Inclusion Rates (2024)
+// Capital Gains Inclusion Rate
+// The proposed increase to 66.67% for gains over $250k was deferred and
+// ultimately cancelled in 2025; a flat 50% inclusion rate applies.
 export const CAPITAL_GAINS_INCLUSION_RATE_DEFAULT = 0.50; // 50% of gains are taxable
-export const CAPITAL_GAINS_INCLUSION_RATE_HIGH = 0.6667; // 66.67% for gains over $250k
-export const CAPITAL_GAINS_THRESHOLD = 250000; // Threshold for higher inclusion rate
-
-// Contribution Limits (2024)
-export const RRSP_CONTRIBUTION_RATE = 0.18; // 18% of previous year's income
-export const RRSP_CONTRIBUTION_MAX = 31560; // 2024 limit
-export const TFSA_ANNUAL_LIMIT = 7000; // 2024 limit
-export const FHSA_ANNUAL_LIMIT = 8000; // 2024 limit
-export const FHSA_LIFETIME_LIMIT = 40000; // Lifetime limit

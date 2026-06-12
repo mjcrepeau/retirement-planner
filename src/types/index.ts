@@ -70,7 +70,6 @@ export interface Profile {
   region: string; // State code (US) or Province code (CA)
   filingStatus?: FilingStatus; // US only
   stateTaxRate?: number; // US only (as decimal), CA uses province
-  annualIncome?: number; // For CA RRSP contribution room calculation
   socialSecurityBenefit?: number; // Canada CPP only; US uses income streams (annual)
   socialSecurityStartAge?: number; // Canada CPP start age; US uses income streams
   secondaryBenefitStartAge?: number; // OAS for CA

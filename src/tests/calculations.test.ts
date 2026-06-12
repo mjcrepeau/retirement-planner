@@ -19,6 +19,7 @@ import { getRMDDivisor } from '../utils/constants';
 import { Account, Profile, Assumptions, IncomeStream } from '../types';
 import { getCountryConfig } from '../countries';
 import { getDefaultWithdrawalAge, getMaxWithdrawalAge } from '../utils/withdrawalDefaults';
+import { OAS_MAX_MONTHLY, OAS_CLAWBACK_THRESHOLD } from '../countries/canada/constants';
 
 // Get US config for tests
 const usConfig = getCountryConfig('US');
@@ -1231,17 +1232,25 @@ const caConfig = getCountryConfig('CA');
 function testCanadianCalculations(): void {
   section('CANADIAN CALCULATIONS');
 
+  const caProfile: Profile = {
+    country: 'CA',
+    currentAge: 30,
+    retirementAge: 31,
+    lifeExpectancy: 90,
+    region: 'ON',
+  };
+
   console.log('\n--- Canadian Federal Tax Brackets ---');
 
   // Canadian federal tax on $50,000 income
   // Basic personal amount: $15,705
   // Taxable: $50,000 - $15,705 = $34,295
-  // 15% on first $53,359 = $34,295 * 0.15 = $5,144.25
-  const caTax1 = caConfig.calculateFederalTax(50000);
+  // 15% on first $55,867 = $34,295 * 0.15 = $5,144.25
+  const caTax1 = caConfig.calculateYearlyTaxes(50000, 0, caProfile).federalTax;
   assert(caTax1 > 0 && caTax1 < 10000, `CA federal tax on $50k is reasonable (got $${caTax1.toFixed(2)})`);
 
   // Higher income bracket test
-  const caTax2 = caConfig.calculateFederalTax(100000);
+  const caTax2 = caConfig.calculateYearlyTaxes(100000, 0, caProfile).federalTax;
   assert(caTax2 > caTax1, `CA federal tax on $100k (${caTax2.toFixed(0)}) > $50k (${caTax1.toFixed(0)})`);
 
   console.log('\n--- Canadian Account Type Recognition ---');
@@ -1251,6 +1260,7 @@ function testCanadianCalculations(): void {
   assert(caConfig.isTraditionalAccount('rrif'), 'RRIF is recognized as traditional');
   assert(caConfig.isTraditionalAccount('lira'), 'LIRA is recognized as traditional');
   assert(caConfig.isTraditionalAccount('lif'), 'LIF is recognized as traditional');
+  assert(caConfig.isTraditionalAccount('fhsa'), 'FHSA is recognized as traditional (transfers to RRSP if unused)');
   assert(!caConfig.isTraditionalAccount('tfsa'), 'TFSA is NOT traditional');
   assert(!caConfig.isTraditionalAccount('non_registered'), 'Non-registered is NOT traditional');
 
@@ -1280,15 +1290,7 @@ function testCanadianCalculations(): void {
     returnRate: 0.07,
   };
 
-  const caProfile: Profile = {
-    country: 'CA',
-    currentAge: 30,
-    retirementAge: 31,
-    lifeExpectancy: 90,
-    region: 'ON',
-  };
-
-  const caResult = calculateAccumulation([rrspAccount], caProfile, caConfig);
+  const caResult = calculateAccumulation([rrspAccount], { ...caProfile, retirementAge: 31 }, caConfig);
 
   // After 1 year at 7%: $100,000 * 1.07 + $10,000 = $117,000
   assertApprox(caResult.totalAtRetirement, 117000, 0.01, 'CA RRSP growth calculation');
@@ -1300,6 +1302,133 @@ function testCanadianCalculations(): void {
 
   const rrifGroup = caGroups.find(g => g.accountTypes.includes('rrif'));
   assert(rrifGroup !== undefined, 'RRIF has a grouping');
+
+  console.log('\n--- Government Benefit Taxable Rate ---');
+
+  // CPP/OAS are fully taxable in Canada; US Social Security is 85% taxable
+  assertApprox(caConfig.getGovernmentBenefitTaxableRate(), 1.0, 0.0001, 'CA government benefits are 100% taxable');
+  assertApprox(usConfig.getGovernmentBenefitTaxableRate(), 0.85, 0.0001, 'US Social Security is 85% taxable');
+
+  console.log('\n--- Low Tax Bracket Fill Target ---');
+
+  // CA target = federal basic personal amount ($15,705) + top of first federal bracket ($55,867) = $71,572
+  assertApprox(caConfig.getLowBracketFillTarget(), 71572, 0.01, 'CA bracket-fill target = BPA + first federal bracket');
+
+  // US targets unchanged: standard deduction + top of 12% bracket
+  assertApprox(usConfig.getLowBracketFillTarget('married_filing_jointly'), 123500, 0.01, 'US MFJ bracket-fill target = $29,200 + $94,300');
+  assertApprox(usConfig.getLowBracketFillTarget('single'), 61750, 0.01, 'US single bracket-fill target = $14,600 + $47,150');
+
+  console.log('\n--- Canadian Capital Gains Stacking ---');
+
+  // Ordinary income $60,000 + capital gains $20,000 (50% inclusion = $10,000 taxable)
+  // Taxable income = $70,000, all within the first federal/provincial brackets (ON)
+  const caGainsTaxes = caConfig.calculateYearlyTaxes(60000, 20000, caProfile);
+  assertApprox(caGainsTaxes.federalTax, 8144.25, 0.01, 'CA federal tax on $60k ordinary + $20k gains (50% inclusion)');
+  assertApprox(caGainsTaxes.regionalTax, 3210.0665, 0.01, 'CA Ontario tax on $60k ordinary + $20k gains (50% inclusion)');
+
+  console.log('\n--- OAS Clawback ---');
+
+  // High income: large RRIF balance forces big mandatory withdrawals,
+  // pushing net income well above the OAS clawback threshold ($86,912).
+  // The following year's OAS should be reduced (clawed back).
+  const highIncomeAccount: Account = {
+    id: 'rrif-high',
+    name: 'RRIF',
+    type: 'rrif',
+    balance: 2000000,
+    annualContribution: 0,
+    contributionGrowthRate: 0,
+    returnRate: 0,
+  };
+
+  const highIncomeProfile: Profile = {
+    country: 'CA',
+    currentAge: 71,
+    retirementAge: 71,
+    lifeExpectancy: 75,
+    region: 'ON',
+    socialSecurityBenefit: 0,
+    socialSecurityStartAge: 65,
+    secondaryBenefitStartAge: 65,
+    secondaryBenefitAmount: OAS_MAX_MONTHLY * 12,
+  };
+
+  const noInflationAssumptions: Assumptions = {
+    inflationRate: 0,
+    safeWithdrawalRate: 0.04,
+    retirementReturnRate: 0,
+  };
+
+  const highIncomeAccum = calculateAccumulation([highIncomeAccount], highIncomeProfile, caConfig);
+  const highIncomeResult = calculateWithdrawals([highIncomeAccount], highIncomeProfile, noInflationAssumptions, highIncomeAccum, caConfig);
+
+  const fullOASAmount = OAS_MAX_MONTHLY * 12;
+  const firstYearGrossIncome = highIncomeResult.yearlyWithdrawals[0].grossIncome;
+  assert(firstYearGrossIncome > OAS_CLAWBACK_THRESHOLD, 'High-income retiree exceeds OAS clawback threshold');
+
+  const secondYearBenefit = highIncomeResult.yearlyWithdrawals[1].governmentBenefitIncome;
+  assert(secondYearBenefit < fullOASAmount, `OAS is clawed back for high-income retiree (got $${secondYearBenefit.toFixed(2)}, full amount $${fullOASAmount.toFixed(2)})`);
+
+  // Low income: small RRIF balance keeps net income below the clawback
+  // threshold, so OAS should remain at its full amount every year.
+  const lowIncomeAccount: Account = {
+    id: 'rrif-low',
+    name: 'RRIF',
+    type: 'rrif',
+    balance: 50000,
+    annualContribution: 0,
+    contributionGrowthRate: 0,
+    returnRate: 0,
+  };
+
+  const lowIncomeProfile: Profile = {
+    ...highIncomeProfile,
+  };
+
+  const lowIncomeAccum = calculateAccumulation([lowIncomeAccount], lowIncomeProfile, caConfig);
+  const lowIncomeResult = calculateWithdrawals([lowIncomeAccount], lowIncomeProfile, noInflationAssumptions, lowIncomeAccum, caConfig);
+
+  const lowIncomeFirstYearGrossIncome = lowIncomeResult.yearlyWithdrawals[0].grossIncome;
+  assert(lowIncomeFirstYearGrossIncome < OAS_CLAWBACK_THRESHOLD, 'Low-income retiree stays under OAS clawback threshold');
+
+  const lowIncomeSecondYearBenefit = lowIncomeResult.yearlyWithdrawals[1].governmentBenefitIncome;
+  assertApprox(lowIncomeSecondYearBenefit, fullOASAmount, 0.01, 'OAS is untouched for low-income retiree');
+
+  console.log('\n--- FHSA Drawdown (Stranded Account Regression) ---');
+
+  // FHSA is treated as a traditional/registered account: with no other
+  // income, it should be drawn down to fill the low tax bracket and meet
+  // spending needs, just like an RRSP.
+  const fhsaAccount: Account = {
+    id: 'fhsa1',
+    name: 'FHSA',
+    type: 'fhsa',
+    balance: 40000,
+    annualContribution: 0,
+    contributionGrowthRate: 0,
+    returnRate: 0,
+  };
+
+  const fhsaProfile: Profile = {
+    country: 'CA',
+    currentAge: 65,
+    retirementAge: 65,
+    lifeExpectancy: 75,
+    region: 'ON',
+    socialSecurityBenefit: 0,
+    socialSecurityStartAge: 70,
+    secondaryBenefitStartAge: 70,
+    secondaryBenefitAmount: 0,
+  };
+
+  const fhsaAccum = calculateAccumulation([fhsaAccount], fhsaProfile, caConfig);
+  const fhsaResult = calculateWithdrawals([fhsaAccount], fhsaProfile, noInflationAssumptions, fhsaAccum, caConfig);
+
+  const fhsaFirstYearWithdrawal = fhsaResult.yearlyWithdrawals[0].withdrawals['fhsa1'] || 0;
+  assert(fhsaFirstYearWithdrawal > 0, `FHSA is withdrawn from when needed (got $${fhsaFirstYearWithdrawal.toFixed(2)})`);
+
+  const fhsaFinalBalance = fhsaResult.yearlyWithdrawals[fhsaResult.yearlyWithdrawals.length - 1].remainingBalances['fhsa1'];
+  assert(fhsaFinalBalance < 40000, `FHSA balance is drawn down over retirement (started $40,000, ended $${fhsaFinalBalance.toFixed(2)})`);
 }
 
 // =============================================================================
