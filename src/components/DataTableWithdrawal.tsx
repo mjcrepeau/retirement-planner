@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Account, RetirementResult, IncomeStream, IncomeTaxTreatment, getTaxTreatment } from '../types';
 import { CHART_COLORS } from '../utils/constants';
+import { useCountry } from '../contexts/CountryContext';
 
 interface DataTableWithdrawalProps {
   accounts: Account[];
@@ -8,10 +9,10 @@ interface DataTableWithdrawalProps {
   incomeStreams?: IncomeStream[];
 }
 
-function formatCurrency(value: number): string {
-  return new Intl.NumberFormat('en-US', {
+function formatCurrencyWithCode(value: number, currency: string = 'USD'): string {
+  return new Intl.NumberFormat(currency === 'CAD' ? 'en-CA' : 'en-US', {
     style: 'currency',
-    currency: 'USD',
+    currency: currency,
     maximumFractionDigits: 0,
   }).format(value);
 }
@@ -24,6 +25,10 @@ function formatPercent(value: number): string {
 type ViewMode = 'income' | 'withdrawals' | 'balances' | 'taxes' | 'incomeStreams';
 
 export function DataTableWithdrawal({ accounts, result, incomeStreams = [] }: DataTableWithdrawalProps) {
+  const { country } = useCountry();
+  const currency = country === 'CA' ? 'CAD' : 'USD';
+  const formatCurrency = (value: number) => formatCurrencyWithCode(value, currency);
+
   const [isExpanded, setIsExpanded] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('income');
   const [expandedPenaltyRows, setExpandedPenaltyRows] = useState<Set<number>>(new Set());
