@@ -1,5 +1,6 @@
 import { ReactNode, useState } from 'react';
 import { CountrySelector } from './CountrySelector';
+import { TAX_DATA_YEAR } from '../utils/constants';
 
 interface LayoutProps {
   children: ReactNode;
@@ -151,7 +152,7 @@ export function Layout({ children, isDarkMode, onToggleDarkMode, onReset }: Layo
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
           <p className="text-sm text-gray-500 dark:text-gray-400 flex-1 text-center">
             This tool provides estimates only. Consult a financial advisor for personalized advice.
-            Tax calculations use 2024 federal brackets.
+            Tax calculations use {TAX_DATA_YEAR} federal brackets.
           </p>
           <a
             href="https://github.com/mjcrepeau/retirement-planner"

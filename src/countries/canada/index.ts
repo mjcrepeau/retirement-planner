@@ -1,18 +1,15 @@
-import type { CountryConfig, AccountTypeConfig, Region, ConversionRule, ContributionLimits, AccountGroup, PenaltyInfo } from '../index';
+import type { CountryConfig, AccountTypeConfig, Region, AccountGroup, PenaltyInfo } from '../index';
 import type { Profile } from '../../types';
-import { calculateFederalIncomeTax, calculateProvincialIncomeTax, calculateTotalTax } from './taxes';
+import { calculateFederalIncomeTax, calculateProvincialIncomeTax } from './taxes';
 import { calculateCanadianRetirementBenefits } from './benefits';
 import { calculateRRIFMinimum } from './withdrawals';
 import {
   CANADIAN_PROVINCES,
-  RRSP_CONTRIBUTION_RATE,
-  RRSP_CONTRIBUTION_MAX,
-  TFSA_ANNUAL_LIMIT,
-  FHSA_ANNUAL_LIMIT,
-  FHSA_LIFETIME_LIMIT,
-  RRIF_START_AGE,
   CPP_MAX_MONTHLY,
   OAS_MAX_MONTHLY,
+  FEDERAL_BASIC_PERSONAL_AMOUNT,
+  FEDERAL_TAX_BRACKETS,
+  CAPITAL_GAINS_INCLUSION_RATE_DEFAULT,
 } from './constants';
 import { CHART_COLORS } from '../../utils/constants';
 
@@ -51,7 +48,7 @@ const CANADA_ACCOUNT_TYPES: AccountTypeConfig[] = [
     type: 'fhsa',
     label: 'FHSA',
     taxTreatment: 'pretax',
-    description: 'First Home Savings Account (for home purchase)',
+    description: 'First Home Savings Account. Modeled as a registered account: unused funds are assumed to transfer to an RRSP and are fully taxable on withdrawal',
   },
   {
     type: 'non_registered',
@@ -65,18 +62,6 @@ const CANADA_ACCOUNT_TYPES: AccountTypeConfig[] = [
     taxTreatment: 'pretax',
     description: 'RRSP with employer matching',
   },
-];
-
-// Withdrawal priority for Canada tax optimization
-const CANADA_WITHDRAWAL_ORDER = [
-  'rrif',              // RRIF minimums first (mandatory)
-  'rrsp',              // Then RRSP if not yet converted
-  'non_registered',    // Taxable (favorable cap gains treatment)
-  'lif',               // LIF (locked-in, special rules)
-  'lira',              // LIRA
-  'fhsa',              // FHSA
-  'employer_rrsp',     // Employer RRSP
-  'tfsa',              // TFSA last (preserve tax-free growth)
 ];
 
 // Account groupings for display purposes
@@ -125,23 +110,32 @@ export const CAConfig: CountryConfig = {
   currency: 'CAD',
   accountTypes: CANADA_ACCOUNT_TYPES,
 
-  calculateFederalTax: (income: number, _filingStatus?: string) => {
-    return calculateFederalIncomeTax(income);
+  calculateYearlyTaxes: (
+    ordinaryIncome: number,
+    capitalGains: number,
+    profile: Profile
+  ): { federalTax: number; regionalTax: number } => {
+    // Capital gains are included in taxable income at a flat 50% inclusion
+    // rate and stack on top of ordinary income.
+    const taxableCapitalGains = Math.max(0, capitalGains) * CAPITAL_GAINS_INCLUSION_RATE_DEFAULT;
+    const taxableIncome = ordinaryIncome + taxableCapitalGains;
+
+    // Federal and provincial brackets each apply their own basic personal
+    // amount exactly once against the combined taxable income.
+    const federalTax = calculateFederalIncomeTax(taxableIncome);
+    const regionalTax = calculateProvincialIncomeTax(taxableIncome, profile.region || '');
+
+    return { federalTax, regionalTax };
   },
 
-  calculateRegionalTax: (income: number, regionCode: string) => {
-    return calculateProvincialIncomeTax(income, regionCode);
+  getGovernmentBenefitTaxableRate: (): number => {
+    // CPP and OAS are fully taxable in Canada
+    return 1.0;
   },
 
-  calculateCapitalGainsTax: (
-    gains: number,
-    _ordinaryIncome: number,
-    regionCode: string,
-    _filingStatus?: string
-  ) => {
-    // In Canada, capital gains are added to income and taxed at marginal rates
-    // The calculateTotalTax function handles the inclusion rate
-    return calculateTotalTax(0, gains, regionCode);
+  getLowBracketFillTarget: (): number => {
+    // Federal basic personal amount + top of the first federal tax bracket
+    return FEDERAL_BASIC_PERSONAL_AMOUNT + FEDERAL_TAX_BRACKETS[0].max;
   },
 
   getRegions: (): Region[] => {
@@ -156,37 +150,17 @@ export const CAConfig: CountryConfig = {
     return calculateRRIFMinimum(age, balance, accountType);
   },
 
-  getMandatoryConversions: (): ConversionRule[] => {
-    return [
-      {
-        fromAccountType: 'rrsp',
-        toAccountType: 'rrif',
-        triggerAge: RRIF_START_AGE,
-        description: 'RRSP must be converted to RRIF by December 31 of the year you turn 71',
-      },
-    ];
-  },
-
   getDefaultProfile: () => ({
+    country: 'CA' as const,
     currentAge: 35,
     retirementAge: 65,
     lifeExpectancy: 90,
     region: 'ON', // Ontario as default
-    annualIncome: 75000, // For RRSP contribution room calculation
     socialSecurityBenefit: CPP_MAX_MONTHLY * 12, // CPP (using SS field)
     socialSecurityStartAge: 65,
     secondaryBenefitStartAge: 65, // OAS
     secondaryBenefitAmount: OAS_MAX_MONTHLY * 12,
   }),
-
-  getContributionLimits: (): ContributionLimits => ({
-    rrsp: { percentage: RRSP_CONTRIBUTION_RATE, max: RRSP_CONTRIBUTION_MAX },
-    tfsa: TFSA_ANNUAL_LIMIT,
-    fhsa: { annual: FHSA_ANNUAL_LIMIT, lifetime: FHSA_LIFETIME_LIMIT },
-    employer_rrsp: { percentage: RRSP_CONTRIBUTION_RATE, max: RRSP_CONTRIBUTION_MAX },
-  }),
-
-  getWithdrawalOrder: () => CANADA_WITHDRAWAL_ORDER,
 
   getAccountTypeLabel: (accountType: string): string => {
     const config = CANADA_ACCOUNT_TYPES.find(a => a.type === accountType);
@@ -194,7 +168,9 @@ export const CAConfig: CountryConfig = {
   },
 
   isTraditionalAccount: (accountType: string): boolean => {
-    return ['rrsp', 'rrif', 'lira', 'lif', 'employer_rrsp'].includes(accountType);
+    // FHSA: unused funds are assumed to transfer to an RRSP and are taxed
+    // on withdrawal, so we treat it like a registered/traditional account.
+    return ['rrsp', 'rrif', 'lira', 'lif', 'employer_rrsp', 'fhsa'].includes(accountType);
   },
 
   supportsEmployerMatch: (accountType: string): boolean => {

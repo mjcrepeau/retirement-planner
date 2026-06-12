@@ -1,10 +1,11 @@
-import type { CountryConfig, AccountTypeConfig, Region, ConversionRule, ContributionLimits, AccountGroup, PenaltyInfo } from '../index';
+import type { CountryConfig, AccountTypeConfig, Region, AccountGroup, PenaltyInfo } from '../index';
 import type { Profile } from '../../types';
-import { calculateTotalFederalTax, calculateCapitalGainsTax as calcCapGainsTax } from './taxes';
+import { calculateTotalFederalTax, getStandardDeduction } from './taxes';
 import { calculateSocialSecurityBenefits } from './benefits';
 import { calculateRMD } from './withdrawals';
 import { US_STATES } from './constants';
 import { CHART_COLORS } from '../../utils/constants';
+import { calculateStateTax } from '../../utils/taxes';
 
 const US_ACCOUNT_TYPES: AccountTypeConfig[] = [
   {
@@ -43,16 +44,6 @@ const US_ACCOUNT_TYPES: AccountTypeConfig[] = [
     taxTreatment: 'hsa',
     description: 'Health Savings Account (triple tax-advantaged)',
   },
-];
-
-// Withdrawal priority for USA tax optimization
-const USA_WITHDRAWAL_ORDER = [
-  'traditional_401k', // RMDs first
-  'traditional_ira',
-  'taxable', // Then taxable (favorable cap gains)
-  'roth_401k', // Preserve Roth
-  'roth_ira',
-  'hsa', // Preserve HSA last
 ];
 
 // Account groupings for display purposes
@@ -94,24 +85,31 @@ export const USConfig: CountryConfig = {
   currency: 'USD',
   accountTypes: US_ACCOUNT_TYPES,
 
-  calculateFederalTax: (income: number, filingStatus?: string) => {
-    return calculateTotalFederalTax(income, 0, filingStatus);
-  },
-
-  calculateRegionalTax: (_income: number, _regionCode: string) => {
-    // Simplified: use the stateTaxRate from Profile
-    // In reality, each state has different brackets
-    // For now, this will be handled by passing stateTaxRate directly
-    return 0; // Will be calculated separately using Profile.stateTaxRate
-  },
-
-  calculateCapitalGainsTax: (
-    gains: number,
+  calculateYearlyTaxes: (
     ordinaryIncome: number,
-    _regionCode: string,
-    filingStatus?: string
-  ) => {
-    return calcCapGainsTax(gains, ordinaryIncome, filingStatus);
+    capitalGains: number,
+    profile: Profile
+  ): { federalTax: number; regionalTax: number } => {
+    const filingStatus = profile.filingStatus;
+    const federalTax = calculateTotalFederalTax(ordinaryIncome, capitalGains, filingStatus);
+    const standardDeduction = getStandardDeduction(filingStatus);
+    const regionalTax = calculateStateTax(
+      ordinaryIncome + capitalGains - standardDeduction,
+      profile.stateTaxRate || 0
+    );
+    return { federalTax, regionalTax };
+  },
+
+  getGovernmentBenefitTaxableRate: (): number => {
+    // US Social Security: up to 85% of benefits are taxable
+    return 0.85;
+  },
+
+  getLowBracketFillTarget: (filingStatus?: string): number => {
+    // Standard deduction + top of the 12% bracket gives good tax efficiency
+    const standardDeduction = getStandardDeduction(filingStatus);
+    const bracket12Max = filingStatus === 'married_filing_jointly' ? 100800 : 50400;
+    return standardDeduction + bracket12Max;
   },
 
   getRegions: (): Region[] => {
@@ -126,28 +124,14 @@ export const USConfig: CountryConfig = {
     return calculateRMD(age, balance, accountType);
   },
 
-  getMandatoryConversions: (): ConversionRule[] => {
-    // No mandatory conversions in USA (RMDs are withdrawals, not conversions)
-    return [];
-  },
-
   getDefaultProfile: () => ({
+    country: 'US' as const,
     currentAge: 35,
     retirementAge: 65,
     lifeExpectancy: 90,
     filingStatus: 'married_filing_jointly' as const,
     stateTaxRate: 0.05,
   }),
-
-  getContributionLimits: (): ContributionLimits => ({
-    traditional_401k: 23000, // 2024 limit
-    roth_401k: 23000,
-    traditional_ira: 7000,
-    roth_ira: 7000,
-    hsa: 4150, // Individual coverage
-  }),
-
-  getWithdrawalOrder: () => USA_WITHDRAWAL_ORDER,
 
   getAccountTypeLabel: (accountType: string): string => {
     const config = US_ACCOUNT_TYPES.find(a => a.type === accountType);

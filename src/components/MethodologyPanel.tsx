@@ -1,6 +1,7 @@
 import { Profile, Assumptions } from '../types';
 import { useCountry } from '../contexts/CountryContext';
 import {
+  TAX_DATA_YEAR,
   TAX_BRACKETS_MFJ,
   TAX_BRACKETS_SINGLE,
   STANDARD_DEDUCTION_MFJ,
@@ -11,6 +12,7 @@ import {
   RMD_START_AGE,
 } from '../utils/constants';
 import {
+  TAX_DATA_YEAR as CA_TAX_DATA_YEAR,
   FEDERAL_TAX_BRACKETS as CA_FEDERAL_BRACKETS,
   FEDERAL_BASIC_PERSONAL_AMOUNT as CA_BASIC_PERSONAL,
   PROVINCIAL_TAX_BRACKETS,
@@ -21,8 +23,6 @@ import {
   OAS_MAX_MONTHLY,
   OAS_CLAWBACK_THRESHOLD,
   CAPITAL_GAINS_INCLUSION_RATE_DEFAULT,
-  CAPITAL_GAINS_INCLUSION_RATE_HIGH,
-  CAPITAL_GAINS_THRESHOLD,
   CANADIAN_PROVINCES,
 } from '../countries/canada/constants';
 
@@ -59,6 +59,8 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
   const provinceName = CANADIAN_PROVINCES.find(p => p.code === province)?.name || province;
   const provincialBrackets = PROVINCIAL_TAX_BRACKETS[province] || PROVINCIAL_TAX_BRACKETS['ON'];
   const provincialBasicAmount = PROVINCIAL_BASIC_PERSONAL_AMOUNTS[province] || PROVINCIAL_BASIC_PERSONAL_AMOUNTS['ON'];
+  // Low-bracket fill target: basic personal amount + top of the first federal bracket
+  const caBracketFillTarget = CA_BASIC_PERSONAL + CA_FEDERAL_BRACKETS[0].max;
 
   return (
     <div className="space-y-6">
@@ -203,7 +205,7 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
         </h3>
         <div className="space-y-4 text-sm">
           <p className="text-gray-600 dark:text-gray-400">
-            The calculator uses a {isCanada ? '5' : '6'}-step withdrawal strategy designed to minimize lifetime taxes:
+            The calculator uses a {isCanada ? '6' : '7'}-step withdrawal strategy designed to minimize lifetime taxes:
           </p>
 
           {isCanada ? (
@@ -221,7 +223,7 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
                 <div>
                   <strong className="text-gray-800 dark:text-gray-200">Additional RRSP/RRIF Withdrawals</strong>
                   <p className="text-gray-600 dark:text-gray-400">
-                    Withdraw from registered accounts to fill lower tax brackets efficiently.
+                    Additional withdrawals from registered accounts (RRSP, RRIF, LIRA, LIF, FHSA) to fill the first federal tax bracket (up to {formatCurrency(caBracketFillTarget, currency)} total ordinary income, combining the {formatCurrency(CA_BASIC_PERSONAL, currency)} basic personal amount and the {formatCurrency(CA_FEDERAL_BRACKETS[0].max, currency)} top of the 15% bracket).
                   </p>
                 </div>
               </li>
@@ -236,7 +238,7 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
                 <span className="flex-shrink-0 w-6 h-6 rounded-full bg-amber-100 dark:bg-amber-900 text-amber-600 dark:text-amber-400 flex items-center justify-center text-xs font-bold">4</span>
                 <div>
                   <strong className="text-gray-800 dark:text-gray-200">Non-Registered Accounts</strong>
-                  <p className="text-gray-600 dark:text-gray-400">Capital gains taxed at 50% inclusion rate (66.67% for gains over {formatCurrency(CAPITAL_GAINS_THRESHOLD, currency)}).</p>
+                  <p className="text-gray-600 dark:text-gray-400">Capital gains taxed at a flat {formatPercent(CAPITAL_GAINS_INCLUSION_RATE_DEFAULT)} inclusion rate.</p>
                 </div>
               </li>
               <li className="flex gap-3">
@@ -244,6 +246,15 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
                 <div>
                   <strong className="text-gray-800 dark:text-gray-200">Additional Registered</strong>
                   <p className="text-gray-600 dark:text-gray-400">If more is needed, withdraws from registered accounts at higher tax brackets.</p>
+                </div>
+              </li>
+              <li className="flex gap-3">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-400 flex items-center justify-center text-xs font-bold">6</span>
+                <div>
+                  <strong className="text-gray-800 dark:text-gray-200">Early Access (Fallback)</strong>
+                  <p className="text-gray-600 dark:text-gray-400">
+                    If every available account is exhausted and spending needs remain, the calculator withdraws from accounts before their configured withdrawal start age. Canada has no early-withdrawal penalty, but this can trigger withholding considerations not modeled here.
+                  </p>
                 </div>
               </li>
             </ol>
@@ -262,7 +273,7 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
                 <div>
                   <strong className="text-gray-800 dark:text-gray-200">Fill 12% Tax Bracket</strong>
                   <p className="text-gray-600 dark:text-gray-400">
-                    Additional traditional withdrawals to fill the 12% bracket (up to {formatCurrency(standardDeduction + (isMarried ? 94300 : 47150))} total ordinary income).
+                    Additional traditional withdrawals to fill the 12% bracket (up to {formatCurrency(standardDeduction + (isMarried ? 100800 : 50400))} total ordinary income).
                   </p>
                 </div>
               </li>
@@ -294,6 +305,15 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
                   <p className="text-gray-600 dark:text-gray-400">If more is needed, withdraws from traditional accounts at higher tax brackets.</p>
                 </div>
               </li>
+              <li className="flex gap-3">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-400 flex items-center justify-center text-xs font-bold">7</span>
+                <div>
+                  <strong className="text-gray-800 dark:text-gray-200">Early Access (Fallback)</strong>
+                  <p className="text-gray-600 dark:text-gray-400">
+                    If every available account is exhausted and spending needs remain, the calculator withdraws from accounts before their configured withdrawal start age, incurring the 10% early-withdrawal penalty for traditional accounts before age 59½.
+                  </p>
+                </div>
+              </li>
             </ol>
           )}
 
@@ -320,10 +340,10 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
             {isCanada ? (
               <>
                 <code className="text-xs bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded block mb-2 text-gray-800 dark:text-gray-200">
-                  Taxable Income = RRSP/RRIF Withdrawals + (CPP × 85%) - Basic Personal Amount
+                  Taxable Income = RRSP/RRIF Withdrawals + CPP + OAS + Taxable Capital Gains - Basic Personal Amount
                 </code>
                 <p className="text-gray-600 dark:text-gray-400">
-                  Progressive federal brackets applied. Basic personal amount is {formatCurrency(CA_BASIC_PERSONAL, currency)}.
+                  CPP and OAS are 100% taxable. Progressive federal brackets applied. Basic personal amount is {formatCurrency(CA_BASIC_PERSONAL, currency)}.
                 </p>
               </>
             ) : (
@@ -343,10 +363,10 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
             {isCanada ? (
               <>
                 <code className="text-xs bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded block mb-2 text-gray-800 dark:text-gray-200">
-                  Taxable Gains = Gains × {formatPercent(CAPITAL_GAINS_INCLUSION_RATE_DEFAULT)} (or {formatPercent(CAPITAL_GAINS_INCLUSION_RATE_HIGH)} for gains &gt; {formatCurrency(CAPITAL_GAINS_THRESHOLD, currency)})
+                  Taxable Gains = Gains × {formatPercent(CAPITAL_GAINS_INCLUSION_RATE_DEFAULT)}
                 </code>
                 <p className="text-gray-600 dark:text-gray-400">
-                  Only {formatPercent(CAPITAL_GAINS_INCLUSION_RATE_DEFAULT)} of capital gains are included in taxable income. Rate increases to {formatPercent(CAPITAL_GAINS_INCLUSION_RATE_HIGH)} for gains above {formatCurrency(CAPITAL_GAINS_THRESHOLD, currency)}.
+                  Only {formatPercent(CAPITAL_GAINS_INCLUSION_RATE_DEFAULT)} of capital gains are included in taxable income. This taxable portion is added to ordinary income (RRSP/RRIF withdrawals, CPP, OAS, etc.) and taxed at your marginal rate under the same progressive brackets.
                 </p>
               </>
             ) : (
@@ -393,8 +413,8 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
       <section className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
           {isCanada
-            ? '2024 Canadian Federal Tax Brackets'
-            : `2024 Federal Tax Brackets (${isMarried ? 'Married Filing Jointly' : 'Single'})`
+            ? `${CA_TAX_DATA_YEAR} Canadian Federal Tax Brackets`
+            : `${TAX_DATA_YEAR} Federal Tax Brackets (${isMarried ? 'Married Filing Jointly' : 'Single'})`
           }
         </h3>
         <div className="overflow-x-auto">
@@ -431,7 +451,7 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
       {isCanada && (
         <section className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-            2024 Provincial Tax Brackets ({provinceName})
+            {CA_TAX_DATA_YEAR} Provincial Tax Brackets ({provinceName})
           </h3>
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
@@ -465,7 +485,7 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
       {!isCanada && (
         <section className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-            2024 Long-Term Capital Gains Rates ({isMarried ? 'Married Filing Jointly' : 'Single'})
+            {TAX_DATA_YEAR} Long-Term Capital Gains Rates ({isMarried ? 'Married Filing Jointly' : 'Single'})
           </h3>
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
@@ -585,7 +605,7 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
                   <li>• Can start as early as age 60 (reduced) or as late as 70 (increased)</li>
                   <li>• Early reduction: 0.6% per month before age 65</li>
                   <li>• Late increase: 0.7% per month after age 65</li>
-                  <li>• CPP income is 85% taxable (same as Social Security)</li>
+                  <li>• CPP income is 100% taxable</li>
                 </ul>
               </div>
               <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
@@ -596,6 +616,7 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
                   <li>• Deferral increases benefit by 0.6% per month</li>
                   <li>• Clawback begins at {formatCurrency(OAS_CLAWBACK_THRESHOLD, currency)} net income</li>
                   <li>• Clawback rate: 15% of income above threshold</li>
+                  <li>• Clawback is based on the prior year's simulated net income (the first retirement year uses an estimate based on target spending)</li>
                 </ul>
               </div>
             </>
@@ -623,17 +644,17 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
         <ul className="space-y-2 text-sm text-amber-700 dark:text-amber-300">
           <li className="flex gap-2">
             <span className="flex-shrink-0">*</span>
-            <span>Tax brackets are for 2024 and don't adjust for inflation in future years.</span>
+            <span>Tax brackets are for {isCanada ? CA_TAX_DATA_YEAR : TAX_DATA_YEAR} and don't adjust for inflation in future years.</span>
           </li>
           {isCanada ? (
             <>
               <li className="flex gap-2">
                 <span className="flex-shrink-0">*</span>
-                <span>CPP benefits are assumed 85% taxable (same treatment as Social Security).</span>
+                <span>CPP and OAS benefits are fully (100%) taxable.</span>
               </li>
               <li className="flex gap-2">
                 <span className="flex-shrink-0">*</span>
-                <span>OAS clawback is calculated but may not reflect all income sources.</span>
+                <span>OAS clawback is based on the prior year's simulated net income (the first retirement year is estimated from target spending) and may not reflect all income sources.</span>
               </li>
               <li className="flex gap-2">
                 <span className="flex-shrink-0">*</span>
@@ -642,6 +663,10 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
               <li className="flex gap-2">
                 <span className="flex-shrink-0">*</span>
                 <span>TFSA withdrawals are completely tax-free.</span>
+              </li>
+              <li className="flex gap-2">
+                <span className="flex-shrink-0">*</span>
+                <span>FHSA balances are modeled as transferring to an RRSP if unused, and are treated as fully taxable on withdrawal like other registered accounts.</span>
               </li>
             </>
           ) : (
@@ -667,6 +692,14 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
           <li className="flex gap-2">
             <span className="flex-shrink-0">*</span>
             <span>Investment returns are applied uniformly; actual returns vary year to year.</span>
+          </li>
+          <li className="flex gap-2">
+            <span className="flex-shrink-0">*</span>
+            <span>The spending target is treated as a pre-tax withdrawal goal. Taxes are paid out of the amount withdrawn, so after-tax income can land below the target; withdrawals are not grossed up to cover taxes.</span>
+          </li>
+          <li className="flex gap-2">
+            <span className="flex-shrink-0">*</span>
+            <span>Required minimum withdrawals (RMDs/RRIF minimums) that exceed the year's spending need are counted as income and spent rather than reinvested in a taxable account.</span>
           </li>
           <li className="flex gap-2">
             <span className="flex-shrink-0">*</span>

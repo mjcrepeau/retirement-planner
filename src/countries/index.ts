@@ -15,17 +15,6 @@ export interface AccountTypeConfig {
   description?: string;
 }
 
-export interface ContributionLimits {
-  [key: string]: number | { percentage?: number; max?: number; annual?: number; lifetime?: number };
-}
-
-export interface ConversionRule {
-  fromAccountType: string;
-  toAccountType: string;
-  triggerAge: number;
-  description: string;
-}
-
 export interface BenefitCalculation {
   age: number;
   monthlyAmount: number;
@@ -72,35 +61,39 @@ export interface CountryConfig {
   accountTypes: AccountTypeConfig[];
 
   /**
-   * Calculate federal/national tax on income
-   * @param income - Total taxable income for the year
-   * @param filingStatus - Optional filing status (US only: 'single', 'married_filing_jointly')
-   * @returns Total federal tax owed
+   * Calculate the year's total federal/national and regional/provincial taxes
+   * on a combination of ordinary income and capital gains.
+   *
+   * Implementations should apply their own rules for how capital gains
+   * stack on ordinary income, inclusion/exclusion rates, standard
+   * deductions / basic personal amounts, and regional tax treatment.
+   *
+   * @param ordinaryIncome - Total ordinary taxable income for the year
+   * @param capitalGains - Total (pre-inclusion) capital gains for the year
+   * @param profile - User profile (filing status, region, state tax rate, etc.)
+   * @returns Federal/national tax and regional/provincial tax owed
    */
-  calculateFederalTax: (income: number, filingStatus?: string) => number;
-
-  /**
-   * Calculate regional (state/provincial) tax on income
-   * @param income - Total taxable income for the year
-   * @param regionCode - State or province code
-   * @returns Total regional tax owed
-   */
-  calculateRegionalTax: (income: number, regionCode: string) => number;
-
-  /**
-   * Calculate tax on capital gains
-   * @param gains - Total capital gains for the year
-   * @param ordinaryIncome - Ordinary income (affects brackets)
-   * @param regionCode - State or province code
-   * @param filingStatus - Optional filing status (US only)
-   * @returns Total tax on capital gains
-   */
-  calculateCapitalGainsTax: (
-    gains: number,
+  calculateYearlyTaxes: (
     ordinaryIncome: number,
-    regionCode: string,
-    filingStatus?: string
-  ) => number;
+    capitalGains: number,
+    profile: Profile
+  ) => { federalTax: number; regionalTax: number };
+
+  /**
+   * Get the portion of government retirement benefit income (e.g., Social
+   * Security, CPP/OAS) that counts as taxable income.
+   * @returns Taxable rate as a decimal (e.g., 0.85 for US Social Security, 1.0 for Canada CPP/OAS)
+   */
+  getGovernmentBenefitTaxableRate: () => number;
+
+  /**
+   * Get the total ordinary income (in dollars) up to which additional
+   * traditional account withdrawals are considered tax-efficient
+   * ("fill the low bracket" step of the withdrawal strategy).
+   * @param filingStatus - Optional filing status (US only)
+   * @returns Total ordinary income target for the low-bracket-fill step
+   */
+  getLowBracketFillTarget: (filingStatus?: string) => number;
 
   /**
    * Get list of regions (states/provinces) for this country
@@ -130,25 +123,9 @@ export interface CountryConfig {
   getMinimumWithdrawal: (age: number, balance: number, accountType: string) => number;
 
   /**
-   * Get any mandatory account type conversions (e.g., RRSP -> RRIF at 71)
-   */
-  getMandatoryConversions: () => ConversionRule[];
-
-  /**
    * Get default profile values for this country
    */
   getDefaultProfile: () => Partial<Profile>;
-
-  /**
-   * Get contribution limits for various account types
-   */
-  getContributionLimits: () => ContributionLimits;
-
-  /**
-   * Get withdrawal priority order for tax optimization
-   * Returns account types in order of withdrawal preference
-   */
-  getWithdrawalOrder: () => string[];
 
   /**
    * Get label for account type

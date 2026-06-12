@@ -12,6 +12,7 @@ import {
 } from 'recharts';
 import { RetirementResult, IncomeStream } from '../types';
 import { CHART_COLORS } from '../utils/constants';
+import { useCountry } from '../contexts/CountryContext';
 
 interface ChartIncomeProps {
   result: RetirementResult;
@@ -29,10 +30,10 @@ function formatCurrency(value: number): string {
   return `$${value.toFixed(0)}`;
 }
 
-function formatTooltipValue(value: number): string {
-  return new Intl.NumberFormat('en-US', {
+function formatTooltipValue(value: number, currency: string = 'USD'): string {
+  return new Intl.NumberFormat(currency === 'CAD' ? 'en-CA' : 'en-US', {
     style: 'currency',
-    currency: 'USD',
+    currency: currency,
     maximumFractionDigits: 0,
   }).format(value);
 }
@@ -42,9 +43,10 @@ interface CustomTooltipProps {
   payload?: Array<{ name: string; value: number; color: string; dataKey: string }>;
   label?: number;
   result: RetirementResult;
+  currency: string;
 }
 
-function CustomTooltip({ active, payload, label, result }: CustomTooltipProps) {
+function CustomTooltip({ active, payload, label, result, currency }: CustomTooltipProps) {
   if (!active || !payload) return null;
 
   const yearData = result.yearlyWithdrawals.find(y => y.age === label);
@@ -56,30 +58,30 @@ function CustomTooltip({ active, payload, label, result }: CustomTooltipProps) {
       <div className="space-y-1 text-sm">
         <div className="flex justify-between gap-4">
           <span style={{ color: CHART_COLORS.pretax }}>Withdrawals:</span>
-          <span className="font-medium text-gray-900 dark:text-white">{formatTooltipValue(yearData.totalWithdrawal)}</span>
+          <span className="font-medium text-gray-900 dark:text-white">{formatTooltipValue(yearData.totalWithdrawal, currency)}</span>
         </div>
         {payload?.filter(p => ['socialSecurity', 'pension', 'otherIncome', 'taxFreeIncome'].includes(p.dataKey) && p.value > 0).map(p => (
           <div key={p.dataKey} className="flex justify-between gap-4">
             <span style={{ color: p.color }}>{p.name}:</span>
-            <span className="font-medium text-gray-900 dark:text-white">{formatTooltipValue(p.value)}</span>
+            <span className="font-medium text-gray-900 dark:text-white">{formatTooltipValue(p.value, currency)}</span>
           </div>
         ))}
         <div className="flex justify-between gap-4 border-t border-gray-200 dark:border-gray-600 pt-1 mt-1">
           <span className="text-gray-600 dark:text-gray-400">Gross Income:</span>
-          <span className="font-medium text-gray-900 dark:text-white">{formatTooltipValue(yearData.grossIncome)}</span>
+          <span className="font-medium text-gray-900 dark:text-white">{formatTooltipValue(yearData.grossIncome, currency)}</span>
         </div>
         <div className="flex justify-between gap-4">
           <span style={{ color: CHART_COLORS.tax }}>Taxes:</span>
           <span className="font-medium text-red-600 dark:text-red-400">
-            -{formatTooltipValue(yearData.totalTax)}
+            -{formatTooltipValue(yearData.totalTax, currency)}
             {yearData.totalPenalties > 0 && (
-              <span className="text-xs"> (includes {formatTooltipValue(yearData.totalPenalties)} penalties)</span>
+              <span className="text-xs"> (includes {formatTooltipValue(yearData.totalPenalties, currency)} penalties)</span>
             )}
           </span>
         </div>
         <div className="border-t border-gray-200 dark:border-gray-600 mt-2 pt-2 flex justify-between gap-4 font-semibold">
           <span style={{ color: CHART_COLORS.spending }}>After-Tax Income:</span>
-          <span className="text-gray-900 dark:text-white">{formatTooltipValue(yearData.afterTaxIncome)}</span>
+          <span className="text-gray-900 dark:text-white">{formatTooltipValue(yearData.afterTaxIncome, currency)}</span>
         </div>
       </div>
     </div>
@@ -87,6 +89,11 @@ function CustomTooltip({ active, payload, label, result }: CustomTooltipProps) {
 }
 
 export function ChartIncome({ result, incomeStreams = [], isDarkMode = false }: ChartIncomeProps) {
+  const { country } = useCountry();
+  const isCanada = country === 'CA';
+  const currency = isCanada ? 'CAD' : 'USD';
+  const govBenefitLabel = isCanada ? 'CPP/OAS' : 'Social Security';
+
   // Colors based on dark mode
   const gridColor = isDarkMode ? '#374151' : '#e5e7eb';
   const tickColor = isDarkMode ? '#9ca3af' : '#6b7280';
@@ -155,7 +162,7 @@ export function ChartIncome({ result, incomeStreams = [], isDarkMode = false }: 
             stroke={tickLineColor}
             width={60}
           />
-          <Tooltip content={<CustomTooltip result={result} />} />
+          <Tooltip content={<CustomTooltip result={result} currency={currency} />} />
           <Legend
             wrapperStyle={{ paddingTop: '10px' }}
             formatter={(value) => <span style={{ color: tickColor }}>{value}</span>}
@@ -171,7 +178,7 @@ export function ChartIncome({ result, incomeStreams = [], isDarkMode = false }: 
           />
           <Bar
             dataKey="socialSecurity"
-            name="Social Security"
+            name={govBenefitLabel}
             stackId="income"
             fill={CHART_COLORS.socialSecurity}
             fillOpacity={0.8}

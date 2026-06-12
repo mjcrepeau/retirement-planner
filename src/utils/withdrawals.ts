@@ -103,6 +103,17 @@ export function calculateWithdrawals(
   const totalPortfolio = accumulationResult.totalAtRetirement;
   let targetSpending = totalPortfolio * assumptions.safeWithdrawalRate;
 
+  // Gross income from the previous simulated year, used for benefit
+  // means-testing (e.g., OAS clawback). For the first retirement year,
+  // approximate using that year's target spending.
+  let previousYearGrossIncome = targetSpending;
+
+  // Portion of government retirement benefit income (Social Security,
+  // CPP/OAS) that counts as taxable income. US: 85%, Canada: 100%.
+  const governmentBenefitTaxableRate = countryConfig
+    ? countryConfig.getGovernmentBenefitTaxableRate()
+    : 0.85;
+
   const yearlyWithdrawals: YearlyWithdrawal[] = [];
   let lifetimeTaxesPaid = 0;
   let portfolioDepletionAge: number | null = null;
@@ -129,7 +140,10 @@ export function calculateWithdrawals(
     // Calculate government retirement benefits (Social Security, CPP/OAS, etc.)
     let governmentBenefits = 0;
     if (countryConfig) {
-      const benefits = countryConfig.calculateRetirementBenefits(profile, age, 0);
+      // Use the prior simulated year's gross income for means-testing
+      // (e.g., OAS clawback). For the first retirement year, this is
+      // approximated using that year's target spending.
+      const benefits = countryConfig.calculateRetirementBenefits(profile, age, previousYearGrossIncome);
       governmentBenefits = benefits.reduce((sum, b) => sum + b.annualAmount, 0);
       // Adjust for inflation
       governmentBenefits *= inflationMultiplier;
@@ -176,7 +190,7 @@ export function calculateWithdrawals(
 
     // Pre-compute non-portfolio taxable income for bracket-filling logic
     const nonPortfolioTaxableIncome =
-      governmentBenefitIncome * 0.85 +
+      governmentBenefitIncome * governmentBenefitTaxableRate +
       inflatedStreamByTax.social_security * 0.85 +
       inflatedStreamByTax.fully_taxable +
       inflatedStreamByTax.other_income;
@@ -207,8 +221,8 @@ export function calculateWithdrawals(
     });
 
     // Calculate taxes using country-specific logic
-    // Government benefits (Canada CPP/OAS): 85% taxable
-    const governmentBenefitTaxable = governmentBenefitIncome * 0.85;
+    // Government benefits (US Social Security: 85% taxable; Canada CPP/OAS: 100% taxable)
+    const governmentBenefitTaxable = governmentBenefitIncome * governmentBenefitTaxableRate;
     // Income streams: per-bucket tax rules
     const ssStreamTaxable = inflatedStreamByTax.social_security * 0.85;
     const pensionTaxable = inflatedStreamByTax.fully_taxable;
@@ -223,28 +237,11 @@ export function calculateWithdrawals(
     let stateTax: number;
 
     if (countryConfig) {
-      // Use country-specific tax calculations
-      federalTax = countryConfig.calculateFederalTax(ordinaryIncome, profile.filingStatus);
-      // Add capital gains tax (country handles inclusion rates)
-      federalTax += countryConfig.calculateCapitalGainsTax(
-        capitalGains,
-        ordinaryIncome,
-        profile.region || '',
-        profile.filingStatus
-      );
-      // Calculate regional (state/provincial) tax
-      stateTax = countryConfig.calculateRegionalTax(
-        ordinaryIncome + capitalGains,
-        profile.region || ''
-      );
-      // For US, regional tax is still calculated using flat rate from profile
-      // (the US config returns 0 from calculateRegionalTax)
-      if (countryConfig.code === 'US') {
-        stateTax = calculateStateTax(
-          ordinaryIncome + capitalGains - getStandardDeduction(profile.filingStatus || 'single'),
-          profile.stateTaxRate || 0
-        );
-      }
+      // Use the country's consolidated tax calculation, which handles
+      // capital gains stacking, inclusion rates, and regional tax rules.
+      const taxes = countryConfig.calculateYearlyTaxes(ordinaryIncome, capitalGains, profile);
+      federalTax = taxes.federalTax;
+      stateTax = taxes.regionalTax;
     } else {
       // Fallback to US logic
       federalTax = calculateTotalFederalTax(
@@ -289,6 +286,10 @@ export function calculateWithdrawals(
       earlyWithdrawalPenalties: penalties,
       totalPenalties,
     });
+
+    // Track this year's gross income for next year's benefit means-testing
+    // (e.g., OAS clawback)
+    previousYearGrossIncome = grossIncome;
 
     // Inflate target spending for next year
     targetSpending *= (1 + assumptions.inflationRate);
@@ -412,18 +413,18 @@ function performTaxOptimizedWithdrawal(
     }
   }
 
-  // Step 2: Fill up to 12% bracket with additional traditional withdrawals
-  // (Standard deduction + 12% bracket gives good tax efficiency)
+  // Step 2: Fill up to the low tax bracket with additional traditional withdrawals
+  // (country-specific target balances tax efficiency against future tax torpedo risk)
   const filingStatus = profile.filingStatus || 'single';
-  const standardDeduction = getStandardDeduction(filingStatus);
-  const bracket12Max = filingStatus === 'married_filing_jointly' ? 94300 : 47150;
-  const targetOrdinaryIncome = standardDeduction + bracket12Max;
+  const targetOrdinaryIncome = countryConfig
+    ? countryConfig.getLowBracketFillTarget(filingStatus)
+    : getStandardDeduction(filingStatus) + (filingStatus === 'married_filing_jointly' ? 100800 : 50400);
   const currentOrdinaryIncome = result.traditionalWithdrawal +
     (nonPortfolioTaxableIncome || 0);
-  const roomIn12Bracket = Math.max(0, targetOrdinaryIncome - currentOrdinaryIncome);
+  const roomInBracket = Math.max(0, targetOrdinaryIncome - currentOrdinaryIncome);
 
   // Withdraw additional from traditional if we have room and need the money
-  const additionalTraditional = Math.min(roomIn12Bracket, remainingNeed);
+  const additionalTraditional = Math.min(roomInBracket, remainingNeed);
   let additionalRemaining = additionalTraditional;
 
   for (const acc of traditionalAccounts) {
