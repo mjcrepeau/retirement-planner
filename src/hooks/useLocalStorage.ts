@@ -67,15 +67,3 @@ export function useDarkMode(): [boolean, () => void] {
 
   return [isDark, toggleDarkMode];
 }
-
-// Clear all retirement planner data from localStorage
-export function clearAllData(): void {
-  const keysToRemove = ['accounts', 'profile', 'assumptions', 'darkMode'];
-  keysToRemove.forEach(key => {
-    try {
-      window.localStorage.removeItem(key);
-    } catch (error) {
-      console.warn(`Error removing localStorage key "${key}":`, error);
-    }
-  });
-}
