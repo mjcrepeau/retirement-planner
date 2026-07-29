@@ -1,19 +1,28 @@
 import { ReactNode, useState } from 'react';
 import { CountrySelector } from './CountrySelector';
 import { TAX_DATA_YEAR } from '../utils/constants';
+import { ExportMenu, type ExportMenuActions } from './ExportMenu';
 
 interface LayoutProps {
   children: ReactNode;
   isDarkMode: boolean;
   onToggleDarkMode: () => void;
   onReset: () => void;
+  exportActions: ExportMenuActions;
 }
 
-export function Layout({ children, isDarkMode, onToggleDarkMode, onReset }: LayoutProps) {
+export function Layout({
+  children,
+  isDarkMode,
+  onToggleDarkMode,
+  onReset,
+  exportActions,
+}: LayoutProps) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
+    // `no-print` hides the whole interactive app while the print report renders.
+    <div className="no-print min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
       {/* Header */}
       <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
@@ -55,6 +64,9 @@ export function Layout({ children, isDarkMode, onToggleDarkMode, onReset }: Layo
 
               {/* Divider */}
               <div className="w-px h-6 bg-gray-300 dark:bg-gray-600"></div>
+
+              {/* Export / Import / Print */}
+              <ExportMenu {...exportActions} />
 
               {/* Reset Button */}
               <button
@@ -99,7 +111,15 @@ export function Layout({ children, isDarkMode, onToggleDarkMode, onReset }: Layo
 
               {/* Dropdown menu */}
               {isMenuOpen && (
-                <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-2 z-50">
+                <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-2 z-50">
+                  <ExportMenu
+                    {...exportActions}
+                    inline
+                    onAfterAction={() => setIsMenuOpen(false)}
+                  />
+
+                  <div className="my-2 border-t border-gray-200 dark:border-gray-700" />
+
                   <button
                     onClick={() => {
                       onReset();

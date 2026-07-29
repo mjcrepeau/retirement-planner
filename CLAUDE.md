@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm run dev      # Start development server
 npm run build    # TypeScript check + production build
 npm run lint     # ESLint
-npm test         # Run calculation tests
+npm test         # Run calculation + export tests
 ```
 
 ## Architecture
@@ -50,6 +50,18 @@ This is a React retirement planning calculator that projects portfolio growth an
 - Defaults are smart: traditional accounts default to 60 (US) or retirement age (Canada)
 - Validation enforces RMD age constraints (can't delay past age 73 US, 71 Canada)
 - Early withdrawals trigger 10% penalty for US traditional accounts before age 59.5
+
+**Export (`src/utils/export/`):**
+
+Three export paths share one foundation. `tables.ts` turns results into presentation-neutral `ExportTable` objects (columns + rows + metadata); `csv.ts` serializes them for spreadsheets and `PrintReport.tsx` renders the same objects as HTML. Add a column once and both outputs get it.
+
+- **Scenario JSON** (`scenario.ts`): saves/loads all five localStorage keys plus `schemaVersion`. Import validates every field, drops unknown ones, then writes storage and reloads — the same approach country switching uses, so providers re-initialize cleanly. Bump `SCENARIO_SCHEMA_VERSION` on any breaking shape change.
+- **CSV**: one button per data-table view, exporting whatever view is active. Header row first (so spreadsheets auto-detect it), metadata after a trailing blank line, raw unformatted numbers, UTF-8 BOM, CRLF.
+- **Print report** (`PrintReport.tsx`): mounts off-screen at a fixed 720px (7.5in at 96dpi) because Recharts measures its container and cannot size an element with no layout. Charts must be passed `animate={false}` — Recharts reveals series by animating a clip path from zero width, so an animating chart prints blank. Dark mode is stripped for the duration and restored afterward.
+
+**Nominal vs. real dollars:**
+
+Everything the engine outputs is nominal (future) dollars. `presentValue`/`inflationFactor` in `export/realDollars.ts` are the single conversion point, used by both `SummaryCards` and the exports. Exports carry nominal as the primary columns, a Real column for headline figures, and an `Inflation Factor` column so any other column can be deflated in a spreadsheet. Note that tax brackets are not indexed to inflation in this model, so nominal tax figures include real bracket creep — deflating them gives the present value of dollars paid, not what an indexed-bracket world would charge.
 
 **Known Simplifications (Penalty Calculations):**
 - Roth contributions vs earnings not tracked separately. In reality, Roth contributions can be withdrawn penalty-free at any time; only earnings face the 10% penalty before age 59.5.

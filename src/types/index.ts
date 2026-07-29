@@ -24,11 +24,60 @@ export type CAAccountType =
 // Combined account type (union of all countries)
 export type AccountType = USAccountType | CAAccountType;
 
+/**
+ * Runtime list of every account type, for validating data that arrives from
+ * outside the app (imported scenario files). The `AssertAllAccountTypes` alias
+ * below fails to compile if a member of the union is missing here.
+ */
+export const ALL_ACCOUNT_TYPES = [
+  'traditional_401k',
+  'roth_401k',
+  'traditional_ira',
+  'roth_ira',
+  'taxable',
+  'hsa',
+  'rrsp',
+  'tfsa',
+  'rrif',
+  'lira',
+  'lif',
+  'fhsa',
+  'non_registered',
+  'employer_rrsp',
+] as const satisfies readonly AccountType[];
+
+type AssertNever<T extends never> = T;
+export type AssertAllAccountTypes = AssertNever<
+  Exclude<AccountType, (typeof ALL_ACCOUNT_TYPES)[number]>
+>;
+
+export function isAccountType(value: unknown): value is AccountType {
+  return typeof value === 'string' && (ALL_ACCOUNT_TYPES as readonly string[]).includes(value);
+}
+
 export type FilingStatus = 'single' | 'married_filing_jointly';
 
 export type TaxTreatment = 'pretax' | 'roth' | 'taxable' | 'hsa';
 
 export type IncomeTaxTreatment = 'social_security' | 'fully_taxable' | 'other_income' | 'tax_free';
+
+export const ALL_INCOME_TAX_TREATMENTS = [
+  'social_security',
+  'fully_taxable',
+  'other_income',
+  'tax_free',
+] as const satisfies readonly IncomeTaxTreatment[];
+
+export type AssertAllIncomeTaxTreatments = AssertNever<
+  Exclude<IncomeTaxTreatment, (typeof ALL_INCOME_TAX_TREATMENTS)[number]>
+>;
+
+export function isIncomeTaxTreatment(value: unknown): value is IncomeTaxTreatment {
+  return (
+    typeof value === 'string' &&
+    (ALL_INCOME_TAX_TREATMENTS as readonly string[]).includes(value)
+  );
+}
 
 export interface IncomeStream {
   id: string;

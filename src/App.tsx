@@ -1,6 +1,14 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Account, Profile, Assumptions, IncomeStream } from './types';
 import { DEFAULT_PROFILE, DEFAULT_ASSUMPTIONS, DEFAULT_INCOME_STREAMS } from './utils/constants';
+import { STORAGE_KEYS } from './utils/storageKeys';
+import {
+  buildScenario,
+  downloadJson,
+  parseScenario,
+  scenarioFilename,
+  type ScenarioFile,
+} from './utils/export';
 import { useRetirementCalc } from './hooks/useRetirementCalc';
 import { useLocalStorage, useDarkMode } from './hooks/useLocalStorage';
 import { CountryProvider, useCountry } from './contexts/CountryContext';
@@ -20,6 +28,7 @@ import { ChartComposition } from './components/ChartComposition';
 import { MethodologyPanel } from './components/MethodologyPanel';
 import { DataTableAccumulation } from './components/DataTableAccumulation';
 import { DataTableWithdrawal } from './components/DataTableWithdrawal';
+import { PrintReport } from './components/PrintReport';
 import { v4 as uuidv4 } from 'uuid';
 
 // Default accounts for US
@@ -192,6 +201,10 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState<TabType>('summary');
   const [expandedSection, setExpandedSection] = useState<string | null>('accounts');
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [pendingImport, setPendingImport] = useState<ScenarioFile | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [isPrinting, setIsPrinting] = useState(false);
+  const printGeneratedAt = useRef(new Date());
 
   const { accumulation, retirement } = useRetirementCalc(accounts, profile, assumptions, countryConfig, incomeStreams);
 
@@ -245,6 +258,111 @@ function AppContent() {
     setShowResetConfirm(false);
   }, []);
 
+  // --- Save / load plan ---------------------------------------------------
+
+  const handleSavePlan = useCallback(() => {
+    const now = new Date();
+    const scenario = buildScenario(
+      {
+        country,
+        profile: { ...profile, country },
+        accounts,
+        incomeStreams,
+        assumptions,
+      },
+      now
+    );
+    downloadJson(scenarioFilename(now), JSON.stringify(scenario, null, 2));
+  }, [country, profile, accounts, incomeStreams, assumptions]);
+
+  const handleLoadPlanFile = useCallback(async (file: File) => {
+    let text: string;
+    try {
+      text = await file.text();
+    } catch {
+      setPendingImport(null);
+      setImportError('That file could not be read.');
+      return;
+    }
+
+    const result = parseScenario(text);
+    if (result.ok) {
+      setImportError(null);
+      setPendingImport(result.scenario);
+    } else {
+      setPendingImport(null);
+      setImportError(result.error);
+    }
+  }, []);
+
+  const confirmImport = useCallback(() => {
+    if (!pendingImport) return;
+
+    // Write the whole persisted state at once, then reload. This is the same
+    // approach country switching uses: it guarantees every provider and hook
+    // re-initializes from the new data (including account normalization and
+    // the country config) rather than trying to sync state in place.
+    localStorage.setItem(STORAGE_KEYS.country, pendingImport.country);
+    localStorage.setItem(STORAGE_KEYS.profile, JSON.stringify(pendingImport.profile));
+    localStorage.setItem(STORAGE_KEYS.accounts, JSON.stringify(pendingImport.accounts));
+    localStorage.setItem(
+      STORAGE_KEYS.incomeStreams,
+      JSON.stringify(pendingImport.incomeStreams)
+    );
+    localStorage.setItem(
+      STORAGE_KEYS.assumptions,
+      JSON.stringify(pendingImport.assumptions)
+    );
+
+    window.location.reload();
+  }, [pendingImport]);
+
+  const cancelImport = useCallback(() => {
+    setPendingImport(null);
+    setImportError(null);
+  }, []);
+
+  // --- Print report -------------------------------------------------------
+
+  const handlePrintReport = useCallback(() => {
+    printGeneratedAt.current = new Date();
+    setIsPrinting(true);
+  }, []);
+
+  // Mount the report, let Recharts measure and draw it, then open the print
+  // dialog. Dark mode is stripped for the duration so the report prints on
+  // white instead of burning a page of dark backgrounds.
+  useEffect(() => {
+    if (!isPrinting) return;
+
+    const root = document.documentElement;
+    const wasDark = root.classList.contains('dark');
+    const restoreDarkMode = () => {
+      if (wasDark) root.classList.add('dark');
+    };
+    if (wasDark) root.classList.remove('dark');
+
+    const timer = window.setTimeout(() => {
+      try {
+        window.print();
+      } finally {
+        restoreDarkMode();
+        setIsPrinting(false);
+      }
+    }, 400);
+
+    return () => {
+      window.clearTimeout(timer);
+      restoreDarkMode();
+    };
+  }, [isPrinting]);
+
+  const exportActions = {
+    onSavePlan: handleSavePlan,
+    onLoadPlanFile: handleLoadPlanFile,
+    onPrintReport: handlePrintReport,
+  };
+
   const tabs: { id: TabType; label: string }[] = [
     { id: 'summary', label: 'Summary' },
     { id: 'accumulation', label: 'Accumulation Phase' },
@@ -253,11 +371,103 @@ function AppContent() {
   ];
 
   return (
+    <>
     <Layout
       isDarkMode={isDarkMode}
       onToggleDarkMode={toggleDarkMode}
       onReset={handleReset}
+      exportActions={exportActions}
     >
+      {/* Import Confirmation Modal */}
+      {pendingImport && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-md mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+              Load this plan?
+            </h3>
+            <p className="text-gray-600 dark:text-gray-300 mb-3">
+              This will replace your current accounts, profile, income streams, and
+              assumptions. This action cannot be undone.
+            </p>
+            <dl className="text-sm bg-gray-50 dark:bg-gray-900 rounded-md p-3 mb-4 space-y-1">
+              <div className="flex justify-between gap-4">
+                <dt className="text-gray-500 dark:text-gray-400">Country</dt>
+                <dd className="text-gray-900 dark:text-white font-medium">
+                  {pendingImport.country === 'CA' ? 'Canada' : 'United States'}
+                  {pendingImport.country !== country && (
+                    <span className="text-amber-600 dark:text-amber-400"> (switching)</span>
+                  )}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-gray-500 dark:text-gray-400">Accounts</dt>
+                <dd className="text-gray-900 dark:text-white font-medium">
+                  {pendingImport.accounts.length}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-gray-500 dark:text-gray-400">Income streams</dt>
+                <dd className="text-gray-900 dark:text-white font-medium">
+                  {pendingImport.incomeStreams.length}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-gray-500 dark:text-gray-400">Ages</dt>
+                <dd className="text-gray-900 dark:text-white font-medium">
+                  {pendingImport.profile.currentAge} → {pendingImport.profile.retirementAge}{' '}
+                  → {pendingImport.profile.lifeExpectancy}
+                </dd>
+              </div>
+              {pendingImport.exportedAt && (
+                <div className="flex justify-between gap-4">
+                  <dt className="text-gray-500 dark:text-gray-400">Saved</dt>
+                  <dd className="text-gray-900 dark:text-white font-medium">
+                    {pendingImport.exportedAt.slice(0, 10)}
+                  </dd>
+                </div>
+              )}
+            </dl>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={cancelImport}
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmImport}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+              >
+                Load Plan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Import Error Modal */}
+      {importError && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-md mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+              Couldn't load that file
+            </h3>
+            <p className="text-gray-600 dark:text-gray-300 mb-4">{importError}</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+              Your current plan has not been changed.
+            </p>
+            <div className="flex justify-end">
+              <button
+                onClick={cancelImport}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Reset Confirmation Modal */}
       {showResetConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -475,7 +685,12 @@ function AppContent() {
                     <ChartAccumulation accounts={accounts} result={accumulation} isDarkMode={isDarkMode} />
                   </div>
 
-                  <DataTableAccumulation accounts={accounts} result={accumulation} />
+                  <DataTableAccumulation
+                    accounts={accounts}
+                    result={accumulation}
+                    profile={profile}
+                    assumptions={assumptions}
+                  />
 
                   <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
@@ -510,7 +725,13 @@ function AppContent() {
                     <ChartTax result={retirement} isDarkMode={isDarkMode} />
                   </div>
 
-                  <DataTableWithdrawal accounts={accounts} result={retirement} incomeStreams={incomeStreams} />
+                  <DataTableWithdrawal
+                    accounts={accounts}
+                    result={retirement}
+                    incomeStreams={incomeStreams}
+                    profile={profile}
+                    assumptions={assumptions}
+                  />
                 </div>
               )}
 
@@ -523,6 +744,20 @@ function AppContent() {
         </div>
       </div>
     </Layout>
+
+    {isPrinting && accounts.length > 0 && (
+      <PrintReport
+        accounts={accounts}
+        profile={profile}
+        assumptions={assumptions}
+        incomeStreams={incomeStreams}
+        accumulation={accumulation}
+        retirement={retirement}
+        country={country}
+        generatedAt={printGeneratedAt.current}
+      />
+    )}
+    </>
   );
 }
 
@@ -534,15 +769,15 @@ function App() {
     const defaultProfile = countryConfig.getDefaultProfile();
 
     // Clear localStorage and set new defaults
-    localStorage.setItem('retirement-planner-accounts', JSON.stringify(createDefaultAccounts(newCountry)));
-    localStorage.setItem('retirement-planner-profile', JSON.stringify({
+    localStorage.setItem(STORAGE_KEYS.accounts, JSON.stringify(createDefaultAccounts(newCountry)));
+    localStorage.setItem(STORAGE_KEYS.profile, JSON.stringify({
       ...DEFAULT_PROFILE,
       ...defaultProfile,
       country: newCountry,
     }));
 
     // Reset income streams — default SS for US, empty for Canada
-    localStorage.setItem('retirement-planner-income-streams',
+    localStorage.setItem(STORAGE_KEYS.incomeStreams,
       JSON.stringify(newCountry === 'US' ? DEFAULT_INCOME_STREAMS : [])
     );
 

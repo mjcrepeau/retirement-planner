@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { AccumulationResult, RetirementResult, Profile, Assumptions } from '../types';
 import { STANDARD_DEDUCTION_MFJ, STANDARD_DEDUCTION_SINGLE } from '../utils/constants';
 import { useCountry } from '../contexts/CountryContext';
+import { presentValue } from '../utils/export/realDollars';
 
 interface SummaryCardsProps {
   profile: Profile;
@@ -20,12 +21,6 @@ function formatCurrencyWithCode(value: number, currency: string = 'USD'): string
 
 function formatPercent(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
-}
-
-// Convert a future nominal amount to its present (today's-dollar) value.
-function presentValue(nominalAmount: number, yearsFromNow: number, inflationRate: number): number {
-  if (yearsFromNow <= 0) return nominalAmount;
-  return nominalAmount / Math.pow(1 + inflationRate, yearsFromNow);
 }
 
 // Build the "≈ $X today" secondary line. Returns undefined when nominal and

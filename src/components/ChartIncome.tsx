@@ -18,6 +18,12 @@ interface ChartIncomeProps {
   result: RetirementResult;
   incomeStreams?: IncomeStream[];
   isDarkMode?: boolean;
+  /**
+   * Recharts reveals series by animating a clip path from zero width. The
+   * print report is captured moments after mount, so animation must be off
+   * or the chart prints blank.
+   */
+  animate?: boolean;
 }
 
 function formatCurrency(value: number): string {
@@ -88,7 +94,7 @@ function CustomTooltip({ active, payload, label, result, currency }: CustomToolt
   );
 }
 
-export function ChartIncome({ result, incomeStreams = [], isDarkMode = false }: ChartIncomeProps) {
+export function ChartIncome({ result, incomeStreams = [], isDarkMode = false, animate = true }: ChartIncomeProps) {
   const { country } = useCountry();
   const isCanada = country === 'CA';
   const currency = isCanada ? 'CAD' : 'USD';
@@ -170,6 +176,7 @@ export function ChartIncome({ result, incomeStreams = [], isDarkMode = false }: 
           <ReferenceLine y={0} stroke="#9ca3af" />
           {/* Gross income components - stacked bars */}
           <Bar
+            isAnimationActive={animate}
             dataKey="withdrawals"
             name="Withdrawals"
             stackId="income"
@@ -177,6 +184,7 @@ export function ChartIncome({ result, incomeStreams = [], isDarkMode = false }: 
             fillOpacity={0.8}
           />
           <Bar
+            isAnimationActive={animate}
             dataKey="socialSecurity"
             name={govBenefitLabel}
             stackId="income"
@@ -185,6 +193,7 @@ export function ChartIncome({ result, incomeStreams = [], isDarkMode = false }: 
           />
           {hasPensionStreams && (
             <Bar
+              isAnimationActive={animate}
               dataKey="pension"
               name="Pension"
               stackId="income"
@@ -194,6 +203,7 @@ export function ChartIncome({ result, incomeStreams = [], isDarkMode = false }: 
           )}
           {hasOtherIncomeStreams && (
             <Bar
+              isAnimationActive={animate}
               dataKey="otherIncome"
               name="Other Income"
               stackId="income"
@@ -203,6 +213,7 @@ export function ChartIncome({ result, incomeStreams = [], isDarkMode = false }: 
           )}
           {hasTaxFreeStreams && (
             <Bar
+              isAnimationActive={animate}
               dataKey="taxFreeIncome"
               name="Tax-Free Income"
               stackId="income"
@@ -212,6 +223,7 @@ export function ChartIncome({ result, incomeStreams = [], isDarkMode = false }: 
           )}
           {/* After-tax income line - the key metric */}
           <Line
+            isAnimationActive={animate}
             type="monotone"
             dataKey="afterTax"
             name="After-Tax Income"
@@ -221,6 +233,7 @@ export function ChartIncome({ result, incomeStreams = [], isDarkMode = false }: 
           />
           {/* Taxes as a separate line for reference */}
           <Line
+            isAnimationActive={animate}
             type="monotone"
             dataKey="taxes"
             name="Taxes Paid"

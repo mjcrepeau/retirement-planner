@@ -1,12 +1,24 @@
-import { useState } from 'react';
-import { Account, RetirementResult, IncomeStream, IncomeTaxTreatment, getTaxTreatment } from '../types';
+import { Fragment, useState } from 'react';
+import {
+  Account,
+  Assumptions,
+  RetirementResult,
+  IncomeStream,
+  IncomeTaxTreatment,
+  Profile,
+  getTaxTreatment,
+} from '../types';
 import { CHART_COLORS } from '../utils/constants';
 import { useCountry } from '../contexts/CountryContext';
+import { buildExportMeta, buildWithdrawalTable } from '../utils/export';
+import { CsvDownloadButton } from './CsvDownloadButton';
 
 interface DataTableWithdrawalProps {
   accounts: Account[];
   result: RetirementResult;
   incomeStreams?: IncomeStream[];
+  profile: Profile;
+  assumptions: Assumptions;
 }
 
 function formatCurrencyWithCode(value: number, currency: string = 'USD'): string {
@@ -24,7 +36,13 @@ function formatPercent(value: number): string {
 
 type ViewMode = 'income' | 'withdrawals' | 'balances' | 'taxes' | 'incomeStreams';
 
-export function DataTableWithdrawal({ accounts, result, incomeStreams = [] }: DataTableWithdrawalProps) {
+export function DataTableWithdrawal({
+  accounts,
+  result,
+  incomeStreams = [],
+  profile,
+  assumptions,
+}: DataTableWithdrawalProps) {
   const { country } = useCountry();
   const currency = country === 'CA' ? 'CAD' : 'USD';
   const formatCurrency = (value: number) => formatCurrencyWithCode(value, currency);
@@ -46,6 +64,15 @@ export function DataTableWithdrawal({ accounts, result, incomeStreams = [] }: Da
   };
 
   if (!result.yearlyWithdrawals.length) return null;
+
+  const buildCsvTable = () =>
+    buildWithdrawalTable(
+      viewMode,
+      accounts,
+      result,
+      incomeStreams,
+      buildExportMeta(profile, assumptions, country)
+    );
 
   // Get color class based on account tax treatment
   const getColorClass = (accountType: Account['type']): string => {
@@ -98,7 +125,7 @@ export function DataTableWithdrawal({ accounts, result, incomeStreams = [] }: Da
       {isExpanded && (
         <div className="px-4 pb-4">
           {/* View Mode Tabs */}
-          <div className="flex gap-2 mb-4 border-b border-gray-200 dark:border-gray-700 overflow-x-auto">
+          <div className="flex gap-2 mb-4 border-b border-gray-200 dark:border-gray-700 overflow-x-auto items-center">
             <button
               onClick={() => setViewMode('income')}
               className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px whitespace-nowrap ${
@@ -149,6 +176,10 @@ export function DataTableWithdrawal({ accounts, result, incomeStreams = [] }: Da
             >
               Income Streams
             </button>
+
+            <div className="ml-auto pb-2">
+              <CsvDownloadButton getTable={buildCsvTable} />
+            </div>
           </div>
 
           <div className="overflow-x-auto">
@@ -289,8 +320,10 @@ export function DataTableWithdrawal({ accounts, result, incomeStreams = [] }: Da
                     const hasPenalties = yearData.totalPenalties > 0;
                     const isPenaltyExpanded = expandedPenaltyRows.has(yearData.age);
                     return (
-                      <>
-                        <tr key={yearData.age} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                      // The key belongs on the fragment, not the inner rows —
+                      // React never sees a keyed child otherwise.
+                      <Fragment key={yearData.age}>
+                        <tr className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50">
                           <td className="py-2 px-2 font-medium text-gray-900 dark:text-white sticky left-0 bg-white dark:bg-gray-800">{yearData.age}</td>
                           <td className="py-2 px-2 text-right font-mono text-gray-900 dark:text-white">{formatCurrency(yearData.grossIncome)}</td>
                           <td className="py-2 px-2 text-right font-mono text-red-600 dark:text-red-400">{formatCurrency(yearData.federalTax)}</td>
@@ -316,7 +349,7 @@ export function DataTableWithdrawal({ accounts, result, incomeStreams = [] }: Da
                           <td className="py-2 px-2 text-right font-mono text-gray-600 dark:text-gray-400">{formatPercent(effectiveRate)}</td>
                         </tr>
                         {hasPenalties && isPenaltyExpanded && yearData.earlyWithdrawalPenalties.length > 0 && (
-                          <tr key={`${yearData.age}-penalties`} className="border-b border-gray-100 dark:border-gray-800 bg-red-50 dark:bg-red-900/10">
+                          <tr className="border-b border-gray-100 dark:border-gray-800 bg-red-50 dark:bg-red-900/10">
                             <td colSpan={7} className="py-2 px-2">
                               <div className="pl-4 border-l-2 border-red-300 dark:border-red-700">
                                 <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Early Withdrawal Penalty Details:</p>
@@ -332,7 +365,7 @@ export function DataTableWithdrawal({ accounts, result, incomeStreams = [] }: Da
                             </td>
                           </tr>
                         )}
-                      </>
+                      </Fragment>
                     );
                   })}
                 </tbody>

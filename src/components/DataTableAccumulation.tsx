@@ -1,11 +1,15 @@
 import { useState } from 'react';
-import { Account, AccumulationResult, getTaxTreatment } from '../types';
-import { is401k } from '../types';
+import { Account, AccumulationResult, Assumptions, Profile, getTaxTreatment } from '../types';
 import { useCountry } from '../contexts/CountryContext';
+import { getEmployerMatch, supportsEmployerMatch } from '../utils/projections';
+import { buildAccumulationTable, buildExportMeta } from '../utils/export';
+import { CsvDownloadButton } from './CsvDownloadButton';
 
 interface DataTableAccumulationProps {
   accounts: Account[];
   result: AccumulationResult;
+  profile: Profile;
+  assumptions: Assumptions;
 }
 
 function formatCurrencyWithCode(value: number, currency: string = 'USD'): string {
@@ -18,7 +22,12 @@ function formatCurrencyWithCode(value: number, currency: string = 'USD'): string
 
 type ViewMode = 'summary' | 'balances' | 'contributions';
 
-export function DataTableAccumulation({ accounts, result }: DataTableAccumulationProps) {
+export function DataTableAccumulation({
+  accounts,
+  result,
+  profile,
+  assumptions,
+}: DataTableAccumulationProps) {
   const { country } = useCountry();
   const currency = country === 'CA' ? 'CAD' : 'USD';
   const formatCurrency = (value: number) => formatCurrencyWithCode(value, currency);
@@ -28,14 +37,13 @@ export function DataTableAccumulation({ accounts, result }: DataTableAccumulatio
 
   if (!result.yearlyBalances.length) return null;
 
-  // Calculate employer match for each account/year
-  const getEmployerMatch = (account: Account, contribution: number): number => {
-    if (!is401k(account.type) || !account.employerMatchPercent || !account.employerMatchLimit) {
-      return 0;
-    }
-    const matchAmount = contribution * account.employerMatchPercent;
-    return Math.min(matchAmount, account.employerMatchLimit);
-  };
+  const buildCsvTable = () =>
+    buildAccumulationTable(
+      viewMode,
+      accounts,
+      result,
+      buildExportMeta(profile, assumptions, country)
+    );
 
   // Get color class based on tax treatment
   const getColorClass = (accountType: Account['type']): string => {
@@ -78,7 +86,7 @@ export function DataTableAccumulation({ accounts, result }: DataTableAccumulatio
       {isExpanded && (
         <div className="px-4 pb-4">
           {/* View Mode Tabs */}
-          <div className="flex gap-2 mb-4 border-b border-gray-200 dark:border-gray-700">
+          <div className="flex gap-2 mb-4 border-b border-gray-200 dark:border-gray-700 items-center">
             <button
               onClick={() => setViewMode('summary')}
               className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px ${
@@ -109,6 +117,10 @@ export function DataTableAccumulation({ accounts, result }: DataTableAccumulatio
             >
               Contributions
             </button>
+
+            <div className="ml-auto pb-2">
+              <CsvDownloadButton getTable={buildCsvTable} />
+            </div>
           </div>
 
           <div className="overflow-x-auto">
@@ -189,7 +201,7 @@ export function DataTableAccumulation({ accounts, result }: DataTableAccumulatio
                     {accounts.map(acc => (
                       <th key={acc.id} className={`text-right py-2 px-2 font-medium ${getColorClass(acc.type)}`}>
                         {acc.name}
-                        {is401k(acc.type) && acc.employerMatchPercent ? ' (+Match)' : ''}
+                        {supportsEmployerMatch(acc) ? ' (+Match)' : ''}
                       </th>
                     ))}
                     <th className="text-right py-2 px-2 font-medium text-gray-700 dark:text-gray-300">Total</th>
