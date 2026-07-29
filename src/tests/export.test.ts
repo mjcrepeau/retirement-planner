@@ -528,6 +528,46 @@ function testScenarioRoundTrip(): void {
     JSON.stringify(testIncomeStreams),
     'Income streams survive the round trip unchanged'
   );
+
+  // Taxable-account cost basis is an optional field: it round-trips when
+  // present and stays undefined when absent (older files).
+  const taxableAccount: Account = {
+    id: 'acc-taxable',
+    name: 'Brokerage',
+    type: 'taxable',
+    balance: 80000,
+    annualContribution: 5000,
+    contributionGrowthRate: 0,
+    returnRate: 0.06,
+    withdrawalRules: { startAge: 65 },
+    costBasis: 55000,
+  };
+  const basisScenario = buildScenario(
+    {
+      country: 'US',
+      profile: testProfile,
+      accounts: [taxableAccount],
+      incomeStreams: [],
+      assumptions: testAssumptions,
+    },
+    FIXED_DATE
+  );
+  const basisResult = parseScenario(JSON.stringify(basisScenario));
+  if (basisResult.ok) {
+    assertEqual(basisResult.scenario.accounts[0].costBasis, 55000, 'Cost basis survives the round trip');
+    const noBasis = { ...taxableAccount } as Partial<Account>;
+    delete noBasis.costBasis;
+    const noBasisResult = parseScenario(
+      JSON.stringify({ ...basisScenario, accounts: [noBasis] })
+    );
+    if (noBasisResult.ok) {
+      assertEqual(noBasisResult.scenario.accounts[0].costBasis, undefined, 'Accounts without cost basis still load');
+    } else {
+      assert(false, `Accounts without cost basis still load (error: ${noBasisResult.error})`);
+    }
+  } else {
+    assert(false, `Cost basis scenario parses (error: ${basisResult.error})`);
+  }
   assertEqual(
     result.scenario.profile.currentAge,
     testProfile.currentAge,

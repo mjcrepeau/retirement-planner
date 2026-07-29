@@ -62,10 +62,17 @@ export function calculateOASAdjustment(
 }
 
 /**
- * Calculate OAS clawback (recovery tax)
- * @param netIncome - Net income for the year (before OAS)
- * @param oasAmount - Annual OAS received
- * @returns Amount of OAS that must be repaid
+ * Calculate OAS clawback (recovery tax).
+ *
+ * All amounts are in TODAY'S dollars: the threshold constants are
+ * current-year figures, so the income being tested and the OAS amount must
+ * be deflated to today's dollars before calling. (The clawback threshold is
+ * indexed to inflation in law, so comparing deflated income against the
+ * current threshold is equivalent to indexing the threshold.)
+ *
+ * @param netIncome - Prior-year taxable income in today's dollars
+ * @param oasAmount - Annual OAS in today's dollars
+ * @returns Amount of OAS that must be repaid, in today's dollars
  */
 export function calculateOASClawback(netIncome: number, oasAmount: number): number {
   if (netIncome <= OAS_CLAWBACK_THRESHOLD) return 0;
@@ -78,12 +85,18 @@ export function calculateOASClawback(netIncome: number, oasAmount: number): numb
 }
 
 /**
- * Calculate CPP and OAS benefits for a given year
+ * Calculate CPP and OAS benefits for a given year.
+ *
+ * Returns amounts in today's dollars; the engine inflates them afterwards.
+ *
+ * @param meansTestIncome - Prior-year taxable income in TODAY'S dollars,
+ *   used for the OAS clawback. Passing nominal future-year income here
+ *   would overstate the clawback badly for long horizons.
  */
 export function calculateCanadianRetirementBenefits(
   profile: Profile,
   currentAge: number,
-  grossIncome: number
+  meansTestIncome: number
 ): BenefitCalculation[] {
   const benefits: BenefitCalculation[] = [];
 
@@ -117,7 +130,7 @@ export function calculateCanadianRetirementBenefits(
     const annualOAS = adjustedOASMonthly * 12;
 
     // Calculate clawback
-    const clawback = calculateOASClawback(grossIncome, annualOAS);
+    const clawback = calculateOASClawback(meansTestIncome, annualOAS);
     const netOAS = annualOAS - clawback;
 
     if (netOAS > 0) {

@@ -1,9 +1,9 @@
 import type { CountryConfig, AccountTypeConfig, Region, AccountGroup, PenaltyInfo } from '../index';
 import type { Profile } from '../../types';
-import { calculateTotalFederalTax, getStandardDeduction } from './taxes';
+import { calculateTotalFederalTax, getStandardDeduction, calculateTaxableSocialSecurity } from './taxes';
 import { calculateSocialSecurityBenefits } from './benefits';
 import { calculateRMD } from './withdrawals';
-import { US_STATES } from './constants';
+import { US_STATES, getRMDStartAge } from './constants';
 import { CHART_COLORS } from '../../utils/constants';
 import { calculateStateTax } from '../../utils/taxes';
 
@@ -88,21 +88,38 @@ export const USConfig: CountryConfig = {
   calculateYearlyTaxes: (
     ordinaryIncome: number,
     capitalGains: number,
-    profile: Profile
-  ): { federalTax: number; regionalTax: number } => {
+    profile: Profile,
+    indexFactor: number = 1
+  ): { federalTax: number; regionalTax: number; taxableIncome: number } => {
     const filingStatus = profile.filingStatus;
-    const federalTax = calculateTotalFederalTax(ordinaryIncome, capitalGains, filingStatus);
-    const standardDeduction = getStandardDeduction(filingStatus);
+    const federalTax = calculateTotalFederalTax(ordinaryIncome, capitalGains, filingStatus, indexFactor);
+    const standardDeduction = getStandardDeduction(filingStatus) * indexFactor;
     const regionalTax = calculateStateTax(
       ordinaryIncome + capitalGains - standardDeduction,
       profile.stateTaxRate || 0
     );
-    return { federalTax, regionalTax };
+    // Capital gains are fully includable for US income measurement purposes.
+    const taxableIncome = ordinaryIncome + capitalGains;
+    return { federalTax, regionalTax, taxableIncome };
   },
 
   getGovernmentBenefitTaxableRate: (): number => {
-    // US Social Security: up to 85% of benefits are taxable
+    // US Social Security: up to 85% of benefits are taxable. Used as a
+    // planning estimate; the exact amount comes from the provisional-income
+    // phase-in in getTaxableGovernmentBenefits.
     return 0.85;
+  },
+
+  getTaxableGovernmentBenefits: (
+    governmentBenefitIncome: number,
+    ssStreamIncome: number,
+    otherOrdinaryIncome: number,
+    profile: Profile
+  ): number => {
+    // Both pools are Social Security; apply the provisional-income
+    // phase-in (0% → 50% → 85%) to the combined benefit.
+    const totalSS = governmentBenefitIncome + ssStreamIncome;
+    return calculateTaxableSocialSecurity(totalSS, otherOrdinaryIncome, profile.filingStatus);
   },
 
   getLowBracketFillTarget: (filingStatus?: string): number => {
@@ -116,13 +133,15 @@ export const USConfig: CountryConfig = {
     return US_STATES;
   },
 
-  calculateRetirementBenefits: (profile: Profile, currentAge: number, grossIncome: number) => {
-    return calculateSocialSecurityBenefits(profile, currentAge, grossIncome);
+  calculateRetirementBenefits: (profile: Profile, currentAge: number, meansTestIncome: number) => {
+    return calculateSocialSecurityBenefits(profile, currentAge, meansTestIncome);
   },
 
-  getMinimumWithdrawal: (age: number, balance: number, accountType: string) => {
-    return calculateRMD(age, balance, accountType);
+  getMinimumWithdrawal: (age: number, balance: number, accountType: string, birthYear?: number) => {
+    return calculateRMD(age, balance, accountType, birthYear);
   },
+
+  getRMDStartAge: (birthYear: number) => getRMDStartAge(birthYear),
 
   getDefaultProfile: () => ({
     country: 'US' as const,

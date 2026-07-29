@@ -15,6 +15,7 @@ import {
   calculateCapitalGainsTax,
   getStandardDeduction,
 } from '../utils/taxes';
+import { calculateTaxableSocialSecurity } from '../countries/usa/taxes';
 import { getRMDDivisor } from '../utils/constants';
 import { Account, Profile, Assumptions, IncomeStream } from '../types';
 import { getCountryConfig } from '../countries';
@@ -767,9 +768,9 @@ function testWithdrawalStrategyDetails(): void {
 
   // Target spending is $20k (4% of $500k)
   // But the strategy should fill the 12% bracket
-  // Standard deduction: $29,200
-  // 12% bracket max: $94,300
-  // Total optimal: $29,200 + $94,300 = $123,500
+  // Standard deduction: $32,200
+  // 12% bracket max: $100,800
+  // Total optimal: $32,200 + $100,800 = $133,000
   // Since we only need $20k, withdrawal should be $20k (need-based, not bracket-filling beyond need)
   assertApprox(year1.totalWithdrawal, 20000, 1, 'Withdrawal matches target spending');
 
@@ -895,7 +896,7 @@ function testCostBasisTracking(): void {
     id: 'taxable',
     name: 'Taxable',
     type: 'taxable',
-    balance: 100000, // Will be treated as 50% cost basis by default
+    balance: 100000, // No costBasis set: defaults to full balance (no unrealized gains)
     annualContribution: 0,
     contributionGrowthRate: 0,
     returnRate: 0,
@@ -920,10 +921,69 @@ function testCostBasisTracking(): void {
 
   const year1 = result.yearlyWithdrawals[0];
 
-  // With $100k balance and 50% cost basis ($50k), gain ratio = 50%
-  // $10k withdrawal should have $5k gains
-  // Capital gains tax at 0% bracket (income below threshold) = $0
-  assert(year1.federalTax >= 0, 'Federal tax calculated for taxable account withdrawal');
+  // With no costBasis input and no growth, basis = full balance, so the
+  // withdrawal has no gains and no tax.
+  assertApprox(year1.federalTax, 0, 0.01, 'No gains (basis = balance) means no federal tax');
+
+  console.log('\n--- Explicit cost basis drives the gains portion ---');
+
+  // $5M balance, zero basis: everything withdrawn is gains. Compare with a
+  // full-basis account: same withdrawal, zero gains. The zero-basis account
+  // must pay more federal tax (capital gains above the 0% bracket).
+  const zeroBasisAccount: Account = {
+    ...taxableAccount,
+    id: 'taxable',
+    balance: 5000000,
+    costBasis: 0,
+  };
+  const fullBasisAccount: Account = {
+    ...taxableAccount,
+    id: 'taxable',
+    balance: 5000000,
+    // costBasis unset: defaults to full balance
+  };
+  const bigAssumptions: Assumptions = {
+    inflationRate: 0,
+    safeWithdrawalRate: 0.10, // $500k/yr withdrawal
+    retirementReturnRate: 0,
+  };
+  const zeroBasisResult = calculateWithdrawals(
+    [zeroBasisAccount], profile, bigAssumptions,
+    calculateAccumulation([zeroBasisAccount], profile, usConfig), usConfig
+  );
+  const fullBasisResult = calculateWithdrawals(
+    [fullBasisAccount], profile, bigAssumptions,
+    calculateAccumulation([fullBasisAccount], profile, usConfig), usConfig
+  );
+  const zeroBasisTax = zeroBasisResult.yearlyWithdrawals[0].federalTax;
+  const fullBasisTax = fullBasisResult.yearlyWithdrawals[0].federalTax;
+  assert(zeroBasisTax > 10000, `Zero-basis withdrawal is taxed as gains ($${zeroBasisTax.toFixed(0)})`);
+  assertApprox(fullBasisTax, 0, 0.01, 'Full-basis withdrawal has no gains and no tax');
+
+  console.log('\n--- Contributions add to basis during accumulation ---');
+
+  // $100k start (basis $40k), $10k/yr contribution for 2 years, no growth:
+  // basis at retirement = $40k + $10k + $10k = $60k; balance = $120k
+  const contributingAccount: Account = {
+    id: 'taxable',
+    name: 'Taxable',
+    type: 'taxable',
+    balance: 100000,
+    costBasis: 40000,
+    annualContribution: 10000,
+    contributionGrowthRate: 0,
+    returnRate: 0,
+  };
+  const accumProfile: Profile = {
+    currentAge: 63,
+    retirementAge: 65,
+    lifeExpectancy: 66,
+    filingStatus: 'married_filing_jointly',
+    stateTaxRate: 0,
+  };
+  const contribAccum = calculateAccumulation([contributingAccount], accumProfile, usConfig);
+  assertApprox(contribAccum.finalBalances['taxable'], 120000, 0.01, 'Balance = $120k after 2 years of contributions');
+  assertApprox(contribAccum.finalCostBasis?.['taxable'] ?? -1, 60000, 0.01, 'Basis = starting basis + contributions = $60k');
 
   console.log('\n--- Cost basis depletion over time ---');
 
@@ -1029,6 +1089,44 @@ function testRMDInteractions(): void {
 
   // RMD only on $1M traditional = $1M / 26.5 = $37,735.85
   assertApprox(mixedYear73.rmdAmount, 37735.85, 1, 'RMD only on traditional balance');
+
+  console.log('\n--- RMD start age depends on birth year (SECURE 2.0) ---');
+
+  // A retiree currently in their 40s was born after 1960, so RMDs start at
+  // 75, not 73. (Birth year is derived from current age.)
+  const currentYear = new Date().getFullYear();
+  const youngRetireeAge = 45; // Born ~currentYear - 45, well after 1960
+  assert(currentYear - youngRetireeAge >= 1960, 'Test precondition: 45-year-old is born 1960+');
+
+  const youngProfile: Profile = {
+    currentAge: youngRetireeAge,
+    retirementAge: 70,
+    lifeExpectancy: 80,
+    filingStatus: 'married_filing_jointly',
+    stateTaxRate: 0.05,
+  };
+  const youngAssumptions: Assumptions = {
+    inflationRate: 0,
+    safeWithdrawalRate: 0.01, // Low SWR so any forced withdrawal is RMD-driven
+    retirementReturnRate: 0,
+  };
+  const youngAccum = calculateAccumulation([largeTraditional], youngProfile, usConfig);
+  const youngResult = calculateWithdrawals([largeTraditional], youngProfile, youngAssumptions, youngAccum, usConfig);
+
+  const at73 = youngResult.yearlyWithdrawals.find(y => y.age === 73);
+  const at74 = youngResult.yearlyWithdrawals.find(y => y.age === 74);
+  const at75 = youngResult.yearlyWithdrawals.find(y => y.age === 75);
+  if (at73 && at74 && at75) {
+    assertApprox(at73.rmdAmount, 0, 0.01, 'No RMD at 73 for someone born 1960+');
+    assertApprox(at74.rmdAmount, 0, 0.01, 'No RMD at 74 for someone born 1960+');
+    assert(at75.rmdAmount > 0, `RMD starts at 75 for someone born 1960+ ($${at75.rmdAmount.toFixed(0)})`);
+    // Divisor at 75 is 24.6 from the Uniform Lifetime Table
+    const expectedRMD75 = at75.rmdAmount;
+    const balanceAt75 = youngResult.yearlyWithdrawals.find(y => y.age === 74)!.totalRemainingBalance;
+    assertApprox(expectedRMD75, balanceAt75 / 24.6, 1, 'RMD at 75 uses the age-75 divisor (24.6)');
+  } else {
+    assert(false, 'Missing withdrawal rows for ages 73-75');
+  }
 }
 
 // =============================================================================
@@ -1148,6 +1246,19 @@ function testPortfolioDepletion(): void {
     result.portfolioDepletionAge !== null && result.portfolioDepletionAge < 80,
     `Portfolio depletes at age ${result.portfolioDepletionAge} (before life expectancy)`
   );
+
+  // The reported depletion age is the first year with an unmet spending
+  // need — the year the money actually ran short, not the year after.
+  const firstShortfallYear = result.yearlyWithdrawals.find(y => y.spendingShortfall > 0);
+  assert(firstShortfallYear !== undefined, 'A shortfall year is recorded for a depleting portfolio');
+  if (firstShortfallYear) {
+    assertApprox(
+      firstShortfallYear.age,
+      result.portfolioDepletionAge ?? -1,
+      0.01,
+      'Depletion age equals the first year with a spending shortfall'
+    );
+  }
 
   console.log('\n--- Sustainable portfolio (no depletion) ---');
 
@@ -1438,6 +1549,298 @@ function testCanadianCalculations(): void {
 }
 
 // =============================================================================
+// CANADA PROVINCIAL FIDELITY TESTS
+// =============================================================================
+
+function testCanadaProvincialFidelity(): void {
+  section('CANADA PROVINCIAL FIDELITY (ON SURTAX, QC ABATEMENT, LIF)');
+
+  console.log('\n--- Ontario surtax ---');
+
+  const onProfile: Profile = {
+    country: 'CA', currentAge: 65, retirementAge: 65, lifeExpectancy: 90, region: 'ON',
+  };
+
+  // $150k ordinary income in Ontario:
+  // Taxable after $12,989 BPA = $137,011
+  // Basic ON tax: $53,891 @ 5.05% + $53,894 @ 9.15% + $29,226 @ 11.16% = $10,914.42
+  // Surtax: 20% x ($10,914.42 - $5,818) + 36% x ($10,914.42 - $7,446) = $2,267.92
+  // Total = $13,182.34
+  const onHigh = caConfig.calculateYearlyTaxes(150000, 0, onProfile);
+  assertApprox(onHigh.regionalTax, 13182.34, 0.5, 'ON provincial tax on $150k includes the surtax');
+
+  // $70k income: basic ON tax (~$3,007) is below the first surtax threshold,
+  // so no surtax applies (regression guard for the existing stacking test).
+  const onLow = caConfig.calculateYearlyTaxes(70000, 0, onProfile);
+  assertApprox(onLow.regionalTax, 3006.98, 0.5, 'ON provincial tax below surtax thresholds is unchanged');
+
+  console.log('\n--- Quebec federal abatement ---');
+
+  const qcProfile: Profile = { ...onProfile, region: 'QC' };
+  const onFederal = caConfig.calculateYearlyTaxes(100000, 0, onProfile).federalTax;
+  const qcFederal = caConfig.calculateYearlyTaxes(100000, 0, qcProfile).federalTax;
+  assertApprox(qcFederal, onFederal * 0.835, 0.01, 'QC federal tax is reduced by the 16.5% abatement');
+
+  console.log('\n--- LIF/LIRA minimum withdrawals ---');
+
+  const lifMin71 = caConfig.getMinimumWithdrawal(71, 100000, 'lif');
+  assertApprox(lifMin71, 5280, 10, 'LIF minimum at 71 = 5.28% of $100k');
+
+  const liraMin75 = caConfig.getMinimumWithdrawal(75, 100000, 'lira');
+  assertApprox(liraMin75, 5820, 10, 'LIRA minimum at 75 = 5.82% (modeled as converted to LIF)');
+
+  const lifMin70 = caConfig.getMinimumWithdrawal(70, 100000, 'lif');
+  assertApprox(lifMin70, 0, 0.01, 'No LIF minimum before age 71');
+
+  const tfsaMin = caConfig.getMinimumWithdrawal(75, 100000, 'tfsa');
+  assertApprox(tfsaMin, 0, 0.01, 'TFSA has no minimum withdrawal');
+}
+
+// =============================================================================
+// SOCIAL SECURITY TAXABILITY PHASE-IN TESTS
+// =============================================================================
+
+function testSocialSecurityPhaseIn(): void {
+  section('SOCIAL SECURITY TAXABILITY PHASE-IN');
+
+  console.log('\n--- Provisional income tiers (MFJ: base $32k, upper $44k) ---');
+
+  // PI = other + 50% SS. $30k SS alone: PI = $15k <= $32k base -> $0 taxable
+  const tier0 = calculateTaxableSocialSecurity(30000, 0, 'married_filing_jointly');
+  assertApprox(tier0, 0, 0.01, 'SS-only retiree below base threshold pays $0 SS tax');
+
+  // $30k SS + $25k other: PI = $40k, in 50% tier
+  // taxable = min(0.5 * (40000 - 32000), 0.5 * 30000) = $4,000
+  const tier1 = calculateTaxableSocialSecurity(30000, 25000, 'married_filing_jointly');
+  assertApprox(tier1, 4000, 0.01, '50% tier: $4,000 of $30k SS taxable with $25k other income');
+
+  // $30k SS + $60k other: PI = $75k > $44k upper
+  // tier1 = min(0.5 * 12000, 15000) = $6,000
+  // taxable = min(0.85 * (75000 - 44000) + 6000, 0.85 * 30000) = min($32,350, $25,500) = $25,500
+  const tier2 = calculateTaxableSocialSecurity(30000, 60000, 'married_filing_jointly');
+  assertApprox(tier2, 25500, 0.01, '85% cap: $25,500 of $30k SS taxable with $60k other income');
+
+  console.log('\n--- Single filer thresholds (base $25k, upper $34k) ---');
+
+  // $20k SS + $18k other: PI = $28k, 50% tier: min(0.5 * 3000, 10000) = $1,500
+  const single1 = calculateTaxableSocialSecurity(20000, 18000, 'single');
+  assertApprox(single1, 1500, 0.01, 'Single filer 50% tier calculation');
+
+  const singleZero = calculateTaxableSocialSecurity(20000, 10000, 'single');
+  assertApprox(singleZero, 0, 0.01, 'Single filer below base threshold pays $0');
+
+  console.log('\n--- Frozen thresholds: far-future nominal incomes hit 85% ---');
+
+  // Thresholds are not indexed, so decades of inflation push virtually any
+  // real income over them in nominal terms.
+  const future = calculateTaxableSocialSecurity(75000, 150000, 'married_filing_jointly');
+  assertApprox(future, 75000 * 0.85, 0.01, 'Large nominal future income caps at 85% taxable');
+
+  console.log('\n--- Engine: low-income retiree pays no federal tax on SS ---');
+
+  // Small Roth + modest SS stream: Roth withdrawals aren't income, so
+  // provisional income stays below the base threshold -> $0 federal tax.
+  const rothAccount: Account = {
+    id: 'roth',
+    name: 'Roth IRA',
+    type: 'roth_ira',
+    balance: 500000,
+    annualContribution: 0,
+    contributionGrowthRate: 0,
+    returnRate: 0,
+  };
+  const lowProfile: Profile = {
+    currentAge: 67,
+    retirementAge: 67,
+    lifeExpectancy: 70,
+    filingStatus: 'married_filing_jointly',
+    stateTaxRate: 0.05,
+  };
+  const lowAssumptions: Assumptions = {
+    inflationRate: 0,
+    safeWithdrawalRate: 0.04, // $20k/yr from Roth
+    retirementReturnRate: 0,
+  };
+  const ssStreams: IncomeStream[] = [
+    { id: 'ss', name: 'Social Security', monthlyAmount: 2000, startAge: 67, taxTreatment: 'social_security' },
+  ];
+  const lowAccum = calculateAccumulation([rothAccount], lowProfile, usConfig);
+  const lowResult = calculateWithdrawals([rothAccount], lowProfile, lowAssumptions, lowAccum, usConfig, ssStreams);
+  const lowYear = lowResult.yearlyWithdrawals[0];
+  // $24k SS, PI = $12k <= $32k base -> $0 taxable SS -> $0 federal tax
+  assertApprox(lowYear.federalTax, 0, 0.01, 'Roth + modest SS retiree pays $0 federal tax (was taxed at 85% flat before)');
+}
+
+// =============================================================================
+// INFLATION INDEXING TESTS
+// =============================================================================
+
+function testInflationIndexing(): void {
+  section('INFLATION INDEXING (BRACKETS & THRESHOLDS)');
+
+  console.log('\n--- Scaled brackets double tax for doubled income ---');
+
+  // With indexFactor 2, doubled nominal income should produce exactly
+  // doubled nominal tax (constant real tax).
+  const base = calculateFederalIncomeTax(50000, 'married_filing_jointly');
+  const indexed = calculateFederalIncomeTax(100000, 'married_filing_jointly', 2);
+  assertApprox(indexed, base * 2, 0.01, 'Federal income tax scales linearly with indexed brackets');
+
+  const baseTotal = calculateTotalFederalTax(100000, 50000, 'married_filing_jointly');
+  const indexedTotal = calculateTotalFederalTax(200000, 100000, 'married_filing_jointly', 2);
+  assertApprox(indexedTotal, baseTotal * 2, 0.01, 'Total federal tax (ordinary + gains) scales with index factor');
+
+  const caProfileON: Profile = {
+    country: 'CA',
+    currentAge: 65,
+    retirementAge: 65,
+    lifeExpectancy: 90,
+    region: 'ON',
+  };
+  const caBase = caConfig.calculateYearlyTaxes(60000, 20000, caProfileON);
+  const caIndexed = caConfig.calculateYearlyTaxes(120000, 40000, caProfileON, 2);
+  assertApprox(caIndexed.federalTax, caBase.federalTax * 2, 0.01, 'CA federal tax scales with index factor');
+  assertApprox(caIndexed.regionalTax, caBase.regionalTax * 2, 0.01, 'CA provincial tax scales with index factor');
+
+  console.log('\n--- taxableIncome returned for means-testing ---');
+
+  assertApprox(caBase.taxableIncome, 70000, 0.01, 'CA taxable income = ordinary + 50% of gains');
+  const usTaxes = usConfig.calculateYearlyTaxes(60000, 20000, {
+    country: 'US', currentAge: 65, retirementAge: 65, lifeExpectancy: 90,
+    region: 'CA', filingStatus: 'married_filing_jointly', stateTaxRate: 0,
+  });
+  assertApprox(usTaxes.taxableIncome, 80000, 0.01, 'US taxable income = ordinary + gains');
+
+  console.log('\n--- Constant real income means constant real tax ---');
+
+  // A retiree whose spending (and thus income) tracks inflation exactly
+  // should pay a constant tax in TODAY'S dollars — indexed brackets remove
+  // artificial bracket creep.
+  const account: Account = {
+    id: 'trad',
+    name: 'Traditional',
+    type: 'traditional_401k',
+    balance: 1500000,
+    annualContribution: 0,
+    contributionGrowthRate: 0,
+    returnRate: 0,
+  };
+  const profile: Profile = {
+    currentAge: 65,
+    retirementAge: 65,
+    lifeExpectancy: 72, // Stop before RMD age so income is purely spending-driven
+    filingStatus: 'married_filing_jointly',
+    stateTaxRate: 0.05,
+  };
+  const assumptions: Assumptions = {
+    inflationRate: 0.03,
+    safeWithdrawalRate: 0.04,
+    retirementReturnRate: 0.05,
+  };
+  const accum = calculateAccumulation([account], profile, usConfig);
+  const result = calculateWithdrawals([account], profile, assumptions, accum, usConfig);
+
+  const firstYear = result.yearlyWithdrawals[0];
+  const lastYear = result.yearlyWithdrawals[result.yearlyWithdrawals.length - 1];
+  const firstRealTax = firstYear.totalTax;
+  const lastRealTax = lastYear.totalTax / Math.pow(1.03, lastYear.age - 65);
+  assertApprox(lastRealTax, firstRealTax, firstRealTax * 0.01, 'Real tax constant across years for constant real income');
+
+  console.log('\n--- OAS clawback: constant real units over long horizons ---');
+
+  // A 35-year-old Canadian with modest real retirement income (well under
+  // the real clawback threshold) must keep FULL OAS even 50 years out.
+  // This is the regression test for the nominal-vs-today's-dollar mismatch
+  // that previously zeroed OAS for middle-income retirees by age ~73.
+  const oasAccount: Account = {
+    id: 'rrsp',
+    name: 'RRSP',
+    type: 'rrsp',
+    balance: 300000,
+    annualContribution: 10000,
+    contributionGrowthRate: 0.02,
+    returnRate: 0.06,
+  };
+  const oasProfile: Profile = {
+    country: 'CA',
+    currentAge: 35,
+    retirementAge: 65,
+    lifeExpectancy: 90,
+    region: 'ON',
+    socialSecurityBenefit: 0, // No CPP, isolate OAS
+    socialSecurityStartAge: 65,
+    secondaryBenefitStartAge: 65,
+    secondaryBenefitAmount: OAS_MAX_MONTHLY * 12,
+  };
+  const oasAssumptions: Assumptions = {
+    inflationRate: 0.03,
+    safeWithdrawalRate: 0.04,
+    retirementReturnRate: 0.05,
+  };
+  const oasAccum = calculateAccumulation([oasAccount], oasProfile, caConfig);
+  const oasResult = calculateWithdrawals([oasAccount], oasProfile, oasAssumptions, oasAccum, caConfig, []);
+
+  const fullOAS = OAS_MAX_MONTHLY * 12;
+  const age85 = oasResult.yearlyWithdrawals.find(y => y.age === 85);
+  assert(age85 !== undefined, 'Has data at age 85');
+  if (age85) {
+    const oasReal85 = age85.governmentBenefitIncome / Math.pow(1.03, 85 - 35);
+    assertApprox(oasReal85, fullOAS, 1, `Mid-income retiree keeps full OAS at 85 (real $${oasReal85.toFixed(0)})`);
+  }
+
+  // A genuinely high-real-income retiree ($200k+ real) must still be
+  // clawed back, decades in the future.
+  const richAccount: Account = {
+    ...oasAccount,
+    id: 'rrsp-rich',
+    balance: 1500000,
+    annualContribution: 50000,
+  };
+  const richAccum = calculateAccumulation([richAccount], oasProfile, caConfig);
+  const richResult = calculateWithdrawals([richAccount], oasProfile, oasAssumptions, richAccum, caConfig, []);
+  const richAge75 = richResult.yearlyWithdrawals.find(y => y.age === 75);
+  if (richAge75) {
+    const oasRealRich = richAge75.governmentBenefitIncome / Math.pow(1.03, 75 - 35);
+    assert(oasRealRich < fullOAS - 1, `High-real-income retiree still clawed back (real OAS $${oasRealRich.toFixed(0)} < $${fullOAS.toFixed(0)})`);
+  }
+
+  console.log('\n--- TFSA withdrawals do not trigger OAS clawback ---');
+
+  // Tax-free withdrawals are not income for clawback purposes. From year 2
+  // on (year 1 uses the target-spending estimate), a TFSA-funded retiree
+  // keeps full OAS despite large withdrawals.
+  const tfsaAccount: Account = {
+    id: 'tfsa',
+    name: 'TFSA',
+    type: 'tfsa',
+    balance: 3000000,
+    annualContribution: 0,
+    contributionGrowthRate: 0,
+    returnRate: 0,
+  };
+  const tfsaProfile: Profile = {
+    country: 'CA',
+    currentAge: 71,
+    retirementAge: 71,
+    lifeExpectancy: 75,
+    region: 'ON',
+    socialSecurityBenefit: 0,
+    socialSecurityStartAge: 65,
+    secondaryBenefitStartAge: 65,
+    secondaryBenefitAmount: OAS_MAX_MONTHLY * 12,
+  };
+  const tfsaAssumptions: Assumptions = {
+    inflationRate: 0,
+    safeWithdrawalRate: 0.04, // $120k/yr spending, all from TFSA
+    retirementReturnRate: 0,
+  };
+  const tfsaAccum = calculateAccumulation([tfsaAccount], tfsaProfile, caConfig);
+  const tfsaResult = calculateWithdrawals([tfsaAccount], tfsaProfile, tfsaAssumptions, tfsaAccum, caConfig, []);
+  const tfsaYear2 = tfsaResult.yearlyWithdrawals[1];
+  assertApprox(tfsaYear2.governmentBenefitIncome, fullOAS, 0.01, 'TFSA-funded retiree keeps full OAS (year 2+)');
+}
+
+// =============================================================================
 // EARLY WITHDRAWAL PENALTY TESTS
 // =============================================================================
 
@@ -1708,11 +2111,16 @@ function testWithdrawalDefaults(): void {
     returnRate: 0.07,
   };
 
-  const defaultAge1 = getDefaultWithdrawalAge(usTraditionalAccount, 65, usConfig);
+  // Born 1950: RMD age 73
+  const defaultAge1 = getDefaultWithdrawalAge(usTraditionalAccount, 65, usConfig, 1950);
   assertApprox(defaultAge1, 60, 0.01, 'US traditional IRA defaults to age 60');
 
-  const maxAge1 = getMaxWithdrawalAge(usTraditionalAccount, 90, usConfig);
-  assertApprox(maxAge1, 73, 0.01, 'US traditional IRA max age is 73 (RMD age)');
+  const maxAge1 = getMaxWithdrawalAge(usTraditionalAccount, 90, usConfig, 1950);
+  assertApprox(maxAge1, 73, 0.01, 'US traditional IRA max age is 73 (born before 1960)');
+
+  // Born 1960 or later: RMD age 75 (SECURE 2.0)
+  const maxAge1b = getMaxWithdrawalAge(usTraditionalAccount, 90, usConfig, 1990);
+  assertApprox(maxAge1b, 75, 0.01, 'US traditional IRA max age is 75 (born 1960 or later)');
 
   console.log('\n--- US Roth Account Defaults ---');
 
@@ -1726,10 +2134,10 @@ function testWithdrawalDefaults(): void {
     returnRate: 0.07,
   };
 
-  const defaultAge2 = getDefaultWithdrawalAge(usRothAccount, 65, usConfig);
+  const defaultAge2 = getDefaultWithdrawalAge(usRothAccount, 65, usConfig, 1990);
   assertApprox(defaultAge2, 65, 0.01, 'US Roth IRA defaults to retirement age');
 
-  const maxAge2 = getMaxWithdrawalAge(usRothAccount, 90, usConfig);
+  const maxAge2 = getMaxWithdrawalAge(usRothAccount, 90, usConfig, 1990);
   assertApprox(maxAge2, 90, 0.01, 'US Roth IRA max age is life expectancy');
 
   console.log('\n--- Canada RRSP Defaults ---');
@@ -1745,11 +2153,11 @@ function testWithdrawalDefaults(): void {
     returnRate: 0.07,
   };
 
-  const defaultAge3 = getDefaultWithdrawalAge(caRRSPAccount, 65, caConfig);
+  const defaultAge3 = getDefaultWithdrawalAge(caRRSPAccount, 65, caConfig, 1990);
   assertApprox(defaultAge3, 65, 0.01, 'Canadian RRSP defaults to retirement age');
 
-  const maxAge3 = getMaxWithdrawalAge(caRRSPAccount, 90, caConfig);
-  assertApprox(maxAge3, 71, 0.01, 'Canadian RRSP max age is 71 (RRIF conversion age)');
+  const maxAge3 = getMaxWithdrawalAge(caRRSPAccount, 90, caConfig, 1990);
+  assertApprox(maxAge3, 71, 0.01, 'Canadian RRSP max age is 71 (RRIF conversion age, any birth year)');
 }
 
 // =============================================================================
@@ -2024,6 +2432,9 @@ function runAllTests(): void {
   testPortfolioDepletion();
   testTotalFederalTaxIntegration();
   testCanadianCalculations();
+  testCanadaProvincialFidelity();
+  testSocialSecurityPhaseIn();
+  testInflationIndexing();
   testWithdrawalWithConfigurableAge();
   testWithdrawalDefaults();
   testEarlyWithdrawalPenalties();

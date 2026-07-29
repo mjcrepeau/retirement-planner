@@ -16,11 +16,14 @@ export function getRRIFMinimumPercentage(age: number): number {
 }
 
 /**
- * Calculate RRIF minimum withdrawal
+ * Calculate RRIF minimum withdrawal.
+ *
+ * Applies to RRSP/RRIF (RRSP modeled as converted to RRIF at 71) and to
+ * LIRA/LIF, which must likewise convert by 71 and follow the same minimum
+ * table. LIF withdrawal MAXIMUMS are not modeled.
  */
 export function calculateRRIFMinimum(age: number, balance: number, accountType: string): number {
-  // RRIF minimums only apply to RRIF and RRSP accounts (after age 71)
-  if (accountType !== 'rrif' && accountType !== 'rrsp') return 0;
+  if (!isRRIFAccount(accountType)) return 0;
   if (age < RRIF_START_AGE) return 0;
   if (balance <= 0) return 0;
 
@@ -36,8 +39,14 @@ export function mustConvertRRSPToRRIF(age: number): boolean {
 }
 
 /**
- * Check if account type is subject to RRIF minimums
+ * Check if account type is subject to RRIF-style minimums after age 71.
+ * LIRA/LIF must convert to a LIF by 71 and follow the same minimum table.
  */
 export function isRRIFAccount(accountType: string): boolean {
-  return accountType === 'rrif' || accountType === 'rrsp';
+  return (
+    accountType === 'rrif' ||
+    accountType === 'rrsp' ||
+    accountType === 'lif' ||
+    accountType === 'lira'
+  );
 }

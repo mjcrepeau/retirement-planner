@@ -68,23 +68,55 @@ export interface CountryConfig {
    * stack on ordinary income, inclusion/exclusion rates, standard
    * deductions / basic personal amounts, and regional tax treatment.
    *
-   * @param ordinaryIncome - Total ordinary taxable income for the year
-   * @param capitalGains - Total (pre-inclusion) capital gains for the year
+   * @param ordinaryIncome - Total ordinary taxable income for the year (nominal dollars)
+   * @param capitalGains - Total (pre-inclusion) capital gains for the year (nominal dollars)
    * @param profile - User profile (filing status, region, state tax rate, etc.)
-   * @returns Federal/national tax and regional/provincial tax owed
+   * @param indexFactor - Cumulative inflation multiplier for the simulated
+   *   year; scales brackets/deductions/personal amounts, which are indexed to
+   *   inflation under current law. Defaults to 1 (current tax year).
+   * @returns Federal/national tax, regional/provincial tax, and the taxable
+   *   income used (ordinary income plus the included portion of capital
+   *   gains, before deductions) — callers use it for benefit means-testing.
    */
   calculateYearlyTaxes: (
     ordinaryIncome: number,
     capitalGains: number,
-    profile: Profile
-  ) => { federalTax: number; regionalTax: number };
+    profile: Profile,
+    indexFactor?: number
+  ) => { federalTax: number; regionalTax: number; taxableIncome: number };
 
   /**
    * Get the portion of government retirement benefit income (e.g., Social
    * Security, CPP/OAS) that counts as taxable income.
+   *
+   * This flat rate is used as a planning ESTIMATE (e.g., in the
+   * bracket-fill step, before the year's withdrawals are known). The exact
+   * amount is computed afterwards by getTaxableGovernmentBenefits.
+   *
    * @returns Taxable rate as a decimal (e.g., 0.85 for US Social Security, 1.0 for Canada CPP/OAS)
    */
   getGovernmentBenefitTaxableRate: () => number;
+
+  /**
+   * Compute the exact taxable amount of retirement-benefit income for the
+   * year, once all other income is known.
+   *
+   * @param governmentBenefitIncome - Government benefits from the profile
+   *   (US Social Security, Canada CPP/OAS), nominal dollars
+   * @param ssStreamIncome - Income-stream income with the social_security
+   *   tax treatment, nominal dollars
+   * @param otherOrdinaryIncome - All other income counted when means-testing
+   *   benefit taxability (traditional withdrawals, pensions, other income,
+   *   capital gains), nominal dollars
+   * @param profile - User profile (filing status)
+   * @returns Total taxable income arising from both benefit pools
+   */
+  getTaxableGovernmentBenefits: (
+    governmentBenefitIncome: number,
+    ssStreamIncome: number,
+    otherOrdinaryIncome: number,
+    profile: Profile
+  ) => number;
 
   /**
    * Get the total ordinary income (in dollars) up to which additional
@@ -102,15 +134,21 @@ export interface CountryConfig {
 
   /**
    * Calculate government retirement benefits (Social Security, CPP, OAS, etc.)
+   *
+   * Benefit amounts are returned in today's dollars; the engine applies the
+   * inflation multiplier afterwards.
+   *
    * @param profile - User profile with benefit start ages and amounts
    * @param currentAge - Current age in the simulation
-   * @param grossIncome - Gross income for the year (for clawback calculations)
+   * @param meansTestIncome - Prior-year taxable income for means-testing
+   *   (e.g., OAS clawback), expressed in TODAY'S dollars so it compares
+   *   against current-year thresholds in like units
    * @returns Array of benefit calculations (e.g., CPP and OAS for Canada)
    */
   calculateRetirementBenefits: (
     profile: Profile,
     currentAge: number,
-    grossIncome: number
+    meansTestIncome: number
   ) => BenefitCalculation[];
 
   /**
@@ -118,9 +156,24 @@ export interface CountryConfig {
    * @param age - Current age
    * @param balance - Account balance
    * @param accountType - Type of account
+   * @param birthYear - Birth year, for rules where the start age depends on
+   *   it (US SECURE 2.0: RMDs at 73 if born before 1960, 75 otherwise).
+   *   When omitted, the earliest start age applies.
    * @returns Minimum withdrawal amount (0 if no requirement)
    */
-  getMinimumWithdrawal: (age: number, balance: number, accountType: string) => number;
+  getMinimumWithdrawal: (
+    age: number,
+    balance: number,
+    accountType: string,
+    birthYear?: number
+  ) => number;
+
+  /**
+   * Age at which mandatory minimum withdrawals (RMD/RRIF) begin for
+   * traditional accounts, for a person born in `birthYear`.
+   * US: 73 (born before 1960) or 75 (born 1960+); Canada: 71.
+   */
+  getRMDStartAge: (birthYear: number) => number;
 
   /**
    * Get default profile values for this country

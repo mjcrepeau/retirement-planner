@@ -279,6 +279,7 @@ export function buildWithdrawalTable(
         totalTax: yearData.totalTax,
         afterTaxIncome: yearData.afterTaxIncome,
         afterTaxIncomeReal: yearData.afterTaxIncome / factor,
+        shortfall: yearData.spendingShortfall,
         inflationFactor: factor,
       };
     });
@@ -300,6 +301,7 @@ export function buildWithdrawalTable(
         (sum, y) => sum + y.afterTaxIncome / factorFor(y.age),
         0
       ),
+      shortfall: years.reduce((sum, y) => sum + y.spendingShortfall, 0),
       inflationFactor: null,
     };
 
@@ -316,6 +318,7 @@ export function buildWithdrawalTable(
         { key: 'totalTax', label: 'Total Taxes', type: 'currency' },
         { key: 'afterTaxIncome', label: 'After-Tax Income', type: 'currency' },
         { key: 'afterTaxIncomeReal', label: 'After-Tax Income (Real)', type: 'currency' },
+        { key: 'shortfall', label: 'Spending Shortfall', type: 'currency' },
         FACTOR_COLUMN,
       ],
       rows,

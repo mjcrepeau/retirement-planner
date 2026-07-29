@@ -15,7 +15,7 @@ const inputErrorClassName = "w-full px-3 py-2 border border-red-500 rounded-md s
 const TAX_TREATMENTS: IncomeTaxTreatment[] = ['social_security', 'fully_taxable', 'other_income', 'tax_free'];
 
 const TAX_TREATMENT_DESCRIPTIONS: Record<IncomeTaxTreatment, string> = {
-  social_security: '85% taxable at your ordinary income rate',
+  social_security: '0–85% taxable via the IRS provisional-income phase-in',
   fully_taxable: '100% taxable as ordinary income',
   other_income: '100% taxable as ordinary income',
   tax_free: 'Not included in taxable income (e.g., VA disability)',

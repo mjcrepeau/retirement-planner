@@ -28,7 +28,7 @@ This is a React retirement planning calculator that projects portfolio growth an
    - Falls back to additional traditional withdrawals if needed
    - Final fallback: if all available accounts are exhausted, withdraws from accounts before their configured start age, incurring early-withdrawal penalties (10% for US traditional accounts before age 59.5)
 
-3. **Tax Calculations** (`src/utils/taxes.ts`): Each country exposes a consolidated `calculateYearlyTaxes` that computes federal + regional tax including capital gains (US: 2026 brackets with 0%/15%/20% capital gains rates; Canada: 50% capital gains inclusion stacked on ordinary income). CPP and OAS are modeled as 100% taxable; US Social Security income streams are 85% taxable (maximum portion).
+3. **Tax Calculations** (`src/utils/taxes.ts`): Each country exposes a consolidated `calculateYearlyTaxes` that computes federal + regional tax including capital gains (US: 2026 brackets with 0%/15%/20% capital gains rates; Canada: 50% capital gains inclusion stacked on ordinary income). Brackets, deductions, basic personal amounts, and the OAS clawback threshold are indexed by the assumed inflation rate for future years (via the `indexFactor` parameter and `scaleBrackets` in `src/utils/taxBrackets.ts`), matching how both countries index them in law. CPP and OAS are modeled as 100% taxable; US Social Security taxability follows the provisional-income phase-in (0–85%, `calculateTaxableSocialSecurity`) with statutorily frozen thresholds that are deliberately NOT inflation-indexed. The bracket-fill planning step still estimates benefit income at the flat 85% maximum (the exact amount depends on withdrawals not yet decided at that point). The OAS clawback compares prior-year taxable income (deflated to today's dollars) against the current-year threshold — all clawback math is done in today's dollars.
 
 ### Data Flow
 
@@ -61,7 +61,7 @@ Three export paths share one foundation. `tables.ts` turns results into presenta
 
 **Nominal vs. real dollars:**
 
-Everything the engine outputs is nominal (future) dollars. `presentValue`/`inflationFactor` in `export/realDollars.ts` are the single conversion point, used by both `SummaryCards` and the exports. Exports carry nominal as the primary columns, a Real column for headline figures, and an `Inflation Factor` column so any other column can be deflated in a spreadsheet. Note that tax brackets are not indexed to inflation in this model, so nominal tax figures include real bracket creep — deflating them gives the present value of dollars paid, not what an indexed-bracket world would charge.
+Everything the engine outputs is nominal (future) dollars. `presentValue`/`inflationFactor` in `export/realDollars.ts` are the single conversion point, used by both `SummaryCards` and the exports. Exports carry nominal as the primary columns, a Real column for headline figures, and an `Inflation Factor` column so any other column can be deflated in a spreadsheet. Tax brackets and thresholds are indexed to the assumed inflation rate, so deflated tax figures reflect constant real tax policy (no artificial bracket creep).
 
 **Known Simplifications (Penalty Calculations):**
 - Roth contributions vs earnings not tracked separately. In reality, Roth contributions can be withdrawn penalty-free at any time; only earnings face the 10% penalty before age 59.5.

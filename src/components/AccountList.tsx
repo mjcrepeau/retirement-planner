@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Account, Profile, getAccountTypeLabel, getTaxTreatment } from '../types';
 import { AccountForm } from './AccountForm';
 import { CHART_COLORS } from '../utils/constants';
-import { getDefaultWithdrawalAge } from '../utils/withdrawalDefaults';
+import { getDefaultWithdrawalAge, birthYearFromAge } from '../utils/withdrawalDefaults';
 import type { CountryConfig } from '../countries';
 
 interface AccountListProps {
@@ -103,7 +103,7 @@ export function AccountList({ accounts, profile, countryConfig, onAdd, onUpdate,
                 <div>
                   <div className="font-medium text-gray-900 dark:text-white">{account.name}</div>
                   <div className="text-sm text-gray-500 dark:text-gray-400">
-                    {getAccountTypeLabel(account.type)} <br />Age {account.withdrawalRules?.startAge ?? getDefaultWithdrawalAge(account, profile.retirementAge, countryConfig)}+
+                    {getAccountTypeLabel(account.type)} <br />Age {account.withdrawalRules?.startAge ?? getDefaultWithdrawalAge(account, profile.retirementAge, countryConfig, birthYearFromAge(profile.currentAge))}+
                   </div>
                 </div>
               </div>
