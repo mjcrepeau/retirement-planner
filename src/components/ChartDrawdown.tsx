@@ -15,6 +15,12 @@ interface ChartDrawdownProps {
   accounts: Account[];
   result: RetirementResult;
   isDarkMode?: boolean;
+  /**
+   * Recharts reveals series by animating a clip path from zero width. The
+   * print report is captured moments after mount, so animation must be off
+   * or the chart prints blank.
+   */
+  animate?: boolean;
 }
 
 function formatCurrency(value: number): string {
@@ -83,7 +89,7 @@ function CustomTooltip({ active, payload, label, accounts, result }: CustomToolt
   );
 }
 
-export function ChartDrawdown({ accounts, result, isDarkMode = false }: ChartDrawdownProps) {
+export function ChartDrawdown({ accounts, result, isDarkMode = false, animate = true }: ChartDrawdownProps) {
   // Colors based on dark mode
   const gridColor = isDarkMode ? '#374151' : '#e5e7eb';
   const tickColor = isDarkMode ? '#9ca3af' : '#6b7280';
@@ -136,6 +142,7 @@ export function ChartDrawdown({ accounts, result, isDarkMode = false }: ChartDra
           />
           {sortedAccounts.map(account => (
             <Area
+              isAnimationActive={animate}
               key={account.id}
               type="monotone"
               dataKey={account.id}

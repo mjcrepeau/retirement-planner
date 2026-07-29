@@ -15,6 +15,12 @@ interface ChartAccumulationProps {
   accounts: Account[];
   result: AccumulationResult;
   isDarkMode?: boolean;
+  /**
+   * Recharts reveals series by animating a clip path from zero width. The
+   * print report is captured moments after mount, so animation must be off
+   * or the chart prints blank.
+   */
+  animate?: boolean;
 }
 
 function formatCurrency(value: number): string {
@@ -73,7 +79,7 @@ function CustomTooltip({ active, payload, label, accounts }: CustomTooltipProps)
   );
 }
 
-export function ChartAccumulation({ accounts, result, isDarkMode = false }: ChartAccumulationProps) {
+export function ChartAccumulation({ accounts, result, isDarkMode = false, animate = true }: ChartAccumulationProps) {
   // Colors based on dark mode
   const gridColor = isDarkMode ? '#374151' : '#e5e7eb';
   const tickColor = isDarkMode ? '#9ca3af' : '#6b7280';
@@ -126,6 +132,7 @@ export function ChartAccumulation({ accounts, result, isDarkMode = false }: Char
           />
           {sortedAccounts.map(account => (
             <Area
+              isAnimationActive={animate}
               key={account.id}
               type="monotone"
               dataKey={account.id}

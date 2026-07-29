@@ -13,6 +13,12 @@ interface ChartCompositionProps {
   accounts: Account[];
   result: AccumulationResult;
   isDarkMode?: boolean;
+  /**
+   * Recharts reveals series by animating a clip path from zero width. The
+   * print report is captured moments after mount, so animation must be off
+   * or the chart prints blank.
+   */
+  animate?: boolean;
 }
 
 function formatCurrency(value: number): string {
@@ -84,7 +90,7 @@ function renderCustomizedLabel(props: LabelProps) {
   );
 }
 
-export function ChartComposition({ accounts, result, isDarkMode = false }: ChartCompositionProps) {
+export function ChartComposition({ accounts, result, isDarkMode = false, animate = true }: ChartCompositionProps) {
   const { config: countryConfig } = useCountry();
   // Colors based on dark mode
   const labelColor = isDarkMode ? '#9ca3af' : '#374151';
@@ -126,6 +132,7 @@ export function ChartComposition({ accounts, result, isDarkMode = false }: Chart
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
+                isAnimationActive={animate}
                 data={groupData}
                 cx="50%"
                 cy="50%"
@@ -159,6 +166,7 @@ export function ChartComposition({ accounts, result, isDarkMode = false }: Chart
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
+                isAnimationActive={animate}
                 data={accountData}
                 cx="50%"
                 cy="50%"

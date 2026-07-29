@@ -67,3 +67,82 @@ body {
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
 }
+
+/* ---------------------------------------------------------------------------
+   Print report
+
+   The report is mounted off-screen at a fixed 720px (7.5in at 96dpi) so that
+   Recharts' ResponsiveContainer measures a real printable width before the
+   print dialog opens — it cannot measure an element with no layout. A negative
+   `left` keeps it out of sight without creating a horizontal scrollbar.
+
+   Dark mode is turned off by removing the `.dark` class while printing (see
+   App.tsx), so these rules only ever deal with the light palette.
+--------------------------------------------------------------------------- */
+.print-report {
+  position: absolute;
+  left: -10000px;
+  top: 0;
+  width: 720px;
+}
+
+/*
+ * SummaryCards switches to 3- and 4-column grids at Tailwind's `md` breakpoint,
+ * which measures the viewport — not this fixed 720px container — so on a wide
+ * screen the cards would overflow the page. Pin them to two columns.
+ */
+.print-report .print-summary .grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* The summary cards' expand chevrons are an interactive affordance with no
+   meaning on paper. */
+.print-report button[aria-label*='calculation details'] {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: letter portrait;
+    margin: 0.5in;
+  }
+
+  /* Hide the interactive app and any in-report controls. */
+  .no-print {
+    display: none !important;
+  }
+
+  body {
+    background: #fff !important;
+  }
+
+  .print-report {
+    position: static;
+    left: auto;
+    /* Keep chart fills and card backgrounds instead of dropping to white. */
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Each major section starts on a fresh page (but not the first). */
+  .print-section + .print-section {
+    break-before: page;
+  }
+
+  /* Don't split a chart or table header away from its content. */
+  .print-block {
+    break-inside: avoid;
+  }
+
+  .print-report table {
+    break-inside: auto;
+  }
+
+  .print-report tr {
+    break-inside: avoid;
+  }
+
+  .print-report thead {
+    display: table-header-group;
+  }
+}

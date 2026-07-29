@@ -15,6 +15,12 @@ import { CHART_COLORS } from '../utils/constants';
 interface ChartTaxProps {
   result: RetirementResult;
   isDarkMode?: boolean;
+  /**
+   * Recharts reveals series by animating a clip path from zero width. The
+   * print report is captured moments after mount, so animation must be off
+   * or the chart prints blank.
+   */
+  animate?: boolean;
 }
 
 function formatCurrency(value: number): string {
@@ -85,7 +91,7 @@ function CustomTooltip({ active, payload, label, result }: CustomTooltipProps) {
   );
 }
 
-export function ChartTax({ result, isDarkMode = false }: ChartTaxProps) {
+export function ChartTax({ result, isDarkMode = false, animate = true }: ChartTaxProps) {
   // Colors based on dark mode
   const gridColor = isDarkMode ? '#374151' : '#e5e7eb';
   const tickColor = isDarkMode ? '#9ca3af' : '#6b7280';
@@ -140,6 +146,7 @@ export function ChartTax({ result, isDarkMode = false }: ChartTaxProps) {
             formatter={(value) => <span style={{ color: tickColor }}>{value}</span>}
           />
           <Bar
+            isAnimationActive={animate}
             yAxisId="left"
             dataKey="federalTax"
             name="Federal Tax"
@@ -148,6 +155,7 @@ export function ChartTax({ result, isDarkMode = false }: ChartTaxProps) {
             fillOpacity={0.8}
           />
           <Bar
+            isAnimationActive={animate}
             yAxisId="left"
             dataKey="stateTax"
             name="State Tax"
@@ -156,6 +164,7 @@ export function ChartTax({ result, isDarkMode = false }: ChartTaxProps) {
             fillOpacity={0.8}
           />
           <Line
+            isAnimationActive={animate}
             yAxisId="right"
             type="monotone"
             dataKey="effectiveRate"

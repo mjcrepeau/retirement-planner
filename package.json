@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "tsx src/tests/calculations.test.ts",
+    "test": "tsx src/tests/calculations.test.ts && tsx src/tests/export.test.ts",
     "test:watch": "tsx watch src/tests/calculations.test.ts"
   },
   "dependencies": {

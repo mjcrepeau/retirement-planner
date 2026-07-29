@@ -8,9 +8,12 @@ import {
 import type { CountryConfig } from '../countries';
 
 /**
- * Calculate employer match for accounts that support it (401k, employer RRSP)
+ * Calculate employer match for accounts that support it (401k, employer RRSP).
+ *
+ * Exported so that the data tables and exports report the same match the
+ * projection actually applied.
  */
-function calculateEmployerMatch(account: Account): number {
+export function getEmployerMatch(account: Account, contribution: number): number {
   const supportsMatch = is401k(account.type) || account.type === 'employer_rrsp';
 
   if (!supportsMatch || !account.employerMatchPercent || !account.employerMatchLimit) {
@@ -20,8 +23,17 @@ function calculateEmployerMatch(account: Account): number {
   // Match is the lesser of:
   // 1. The match percent times the contribution
   // 2. The match limit
-  const matchAmount = account.annualContribution * account.employerMatchPercent;
+  const matchAmount = contribution * account.employerMatchPercent;
   return Math.min(matchAmount, account.employerMatchLimit);
+}
+
+/** True when this account type can receive an employer match at all. */
+export function supportsEmployerMatch(account: Account): boolean {
+  return (
+    (is401k(account.type) || account.type === 'employer_rrsp') &&
+    !!account.employerMatchPercent &&
+    !!account.employerMatchLimit
+  );
 }
 
 /**
@@ -68,10 +80,7 @@ export function calculateAccumulation(
       const balanceAfterReturn = currentBalance * (1 + account.returnRate);
 
       // 2. Add contribution (with employer match if applicable)
-      const employerMatch = calculateEmployerMatch({
-        ...account,
-        annualContribution: currentContribution,
-      });
+      const employerMatch = getEmployerMatch(account, currentContribution);
       const totalContribution = currentContribution + employerMatch;
 
       // Update balance
