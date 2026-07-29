@@ -113,6 +113,17 @@ Full visibility into how every number is calculated:
   - Step-by-step calculation breakdown
   - Context and explanations for the values
 
+### Exporting Your Data
+Three ways to get data out of the planner, from the **Export** menu in the header:
+
+- **Save plan (.json)**: Writes your full plan — accounts, profile, income streams, assumptions, and country — to a dated file. Nothing leaves your browser.
+- **Load plan (.json)**: Restores a saved plan. Every field is validated with readable errors, unknown fields are dropped rather than written to storage, and a confirmation modal previews the incoming plan before anything is overwritten. Plans saved in one country can be loaded in the other; the modal flags the switch.
+- **Print / Save as PDF**: Renders a full report — cover page, plan inputs, summary, charts, year-by-year tables, and methodology — and hands it to your browser's print dialog, so "Save as PDF" produces the file.
+
+Each year-by-year data panel also has a **Download CSV** button in its header that exports whichever view is currently active. CSVs lead with the header row so spreadsheets auto-detect it, carry raw unformatted numbers, and append a metadata block after a trailing blank line.
+
+**A note on nominal vs. real dollars**: every figure the engine produces is in nominal (future) dollars. Exports keep nominal as the primary columns, add a Real column for headline figures, and include an `Inflation Factor` column so any other column can be deflated in a spreadsheet. Because tax brackets are not indexed to inflation in this model, nominal tax figures include real bracket creep — deflating them gives the present value of dollars paid, not what an indexed-bracket world would charge.
+
 ### User Experience
 - **Dark Mode**: Toggle between light and dark themes
 - **Data Persistence**: All data saved to localStorage automatically
@@ -182,13 +193,16 @@ src/
 │   ├── ChartIncome.tsx           # Retirement income chart
 │   ├── ChartTax.tsx              # Tax burden chart
 │   ├── CountrySelector.tsx       # Country switching dropdown
+│   ├── CsvDownloadButton.tsx     # Per-table CSV download button
 │   ├── DataTableAccumulation.tsx # Year-by-year accumulation data
 │   ├── DataTableWithdrawal.tsx   # Year-by-year withdrawal data
+│   ├── ExportMenu.tsx            # Save/load plan & print report menu
 │   ├── IncomeStreamForm.tsx     # Form for adding/editing income streams
 │   ├── IncomeStreamList.tsx     # List of income streams
 │   ├── Layout.tsx                # App layout with header/footer
 │   ├── MethodologyPanel.tsx      # Formulas & assumptions reference
 │   ├── NumberInput.tsx           # String to number conversion
+│   ├── PrintReport.tsx           # Printable full-report rendering
 │   ├── ProfileForm.tsx           # Personal information form
 │   ├── SummaryCards.tsx          # Expandable key metrics display
 │   └── Tooltip.tsx               # Reusable tooltip component
@@ -214,13 +228,26 @@ src/
 ├── types/
 │   └── index.ts              # TypeScript type definitions
 ├── utils/
+│   ├── export/               # Data export (CSV, JSON, print report)
+│   │   ├── index.ts          # Public export surface
+│   │   ├── types.ts          # ExportTable column/row/metadata types
+│   │   ├── tables.ts         # Results -> presentation-neutral tables
+│   │   ├── csv.ts            # CSV serialization (RFC 4180)
+│   │   ├── scenario.ts       # Plan save/load + validation
+│   │   ├── realDollars.ts    # Nominal -> real dollar conversion
+│   │   ├── format.ts         # Shared value/filename formatting
+│   │   └── download.ts       # Browser file download helper
 │   ├── constants.ts          # Tax brackets, RMD tables, defaults
 │   ├── incomeStreams.ts      # Income stream tax calculations
+│   ├── penaltyCalculator.ts  # Early withdrawal penalty rules
 │   ├── projections.ts        # Accumulation phase calculations
+│   ├── storageKeys.ts        # Shared localStorage key names
 │   ├── taxes.ts              # Tax calculation functions
+│   ├── withdrawalDefaults.ts # Default withdrawal start ages
 │   └── withdrawals.ts        # Withdrawal phase simulation
 ├── tests/
-│   └── calculations.test.ts  # Comprehensive math tests (US & CA)
+│   ├── calculations.test.ts  # Comprehensive math tests (US & CA)
+│   └── export.test.ts        # CSV, table builder & scenario tests
 ├── App.tsx                   # Main application component
 ├── index.css                 # Tailwind CSS configuration
 └── main.tsx                  # Application entry point
@@ -275,7 +302,7 @@ For each year of retirement:
 
 ## Testing
 
-The project includes comprehensive tests for all calculations:
+The project includes comprehensive tests for all calculations and exports:
 
 ```bash
 npm test
@@ -289,6 +316,10 @@ Tests cover:
 - Withdrawal phase simulations
 - Canadian account type recognition
 - Edge cases (zero balances, long retirements, etc.)
+- CSV escaping and structure (quoting, formula neutralization, metadata block)
+- Nominal-to-real dollar conversion
+- Export table builders for every data-table view
+- Plan save/load round-tripping and import validation
 
 Run `npm test` for the full suite and current test count.
 
