@@ -58,30 +58,45 @@ export function DataTableAccumulation({
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
-      <button
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full px-4 py-3 flex justify-between items-center hover:bg-gray-50 dark:hover:bg-gray-700 rounded-t-lg"
-      >
-        <div className="flex items-center gap-2">
+      {/* The CSV button sits beside the toggle, so the header is a row of
+          siblings rather than one full-width button — a button cannot nest. */}
+      <div className="w-full px-4 py-3 flex items-center gap-2 rounded-t-lg">
+        <button
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="flex items-center gap-2 flex-1 min-w-0 text-left px-1 -mx-1 py-1 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700"
+        >
           <svg
-            className="w-5 h-5 text-gray-500 dark:text-gray-400"
+            className="w-5 h-5 shrink-0 text-gray-500 dark:text-gray-400"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
           >
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
           </svg>
-          <span className="font-medium text-gray-900 dark:text-white">Year-by-Year Data</span>
-        </div>
-        <svg
-          className={`w-5 h-5 text-gray-500 dark:text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
+          <span className="font-medium text-gray-900 dark:text-white truncate">Year-by-Year Data</span>
+        </button>
+
+        {isExpanded && (
+          <div className="shrink-0">
+            <CsvDownloadButton getTable={buildCsvTable} />
+          </div>
+        )}
+
+        <button
+          onClick={() => setIsExpanded(!isExpanded)}
+          aria-label={isExpanded ? 'Collapse year-by-year data' : 'Expand year-by-year data'}
+          className="shrink-0 p-1 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700"
         >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
+          <svg
+            className={`w-5 h-5 text-gray-500 dark:text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+      </div>
 
       {isExpanded && (
         <div className="px-4 pb-4">
@@ -117,10 +132,6 @@ export function DataTableAccumulation({
             >
               Contributions
             </button>
-
-            <div className="ml-auto pb-2">
-              <CsvDownloadButton getTable={buildCsvTable} />
-            </div>
           </div>
 
           <div className="overflow-x-auto">

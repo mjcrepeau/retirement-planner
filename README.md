@@ -120,7 +120,7 @@ Three ways to get data out of the planner, from the **Export** menu in the heade
 - **Load plan (.json)**: Restores a saved plan. Every field is validated with readable errors, unknown fields are dropped rather than written to storage, and a confirmation modal previews the incoming plan before anything is overwritten. Plans saved in one country can be loaded in the other; the modal flags the switch.
 - **Print / Save as PDF**: Renders a full report — cover page, plan inputs, summary, charts, year-by-year tables, and methodology — and hands it to your browser's print dialog, so "Save as PDF" produces the file.
 
-Each year-by-year data table also has a **Download CSV** button that exports whichever view is currently active. CSVs lead with the header row so spreadsheets auto-detect it, carry raw unformatted numbers, and append a metadata block after a trailing blank line.
+Each year-by-year data panel also has a **Download CSV** button in its header that exports whichever view is currently active. CSVs lead with the header row so spreadsheets auto-detect it, carry raw unformatted numbers, and append a metadata block after a trailing blank line.
 
 **A note on nominal vs. real dollars**: every figure the engine produces is in nominal (future) dollars. Exports keep nominal as the primary columns, add a Real column for headline figures, and include an `Inflation Factor` column so any other column can be deflated in a spreadsheet. Because tax brackets are not indexed to inflation in this model, nominal tax figures include real bracket creep — deflating them gives the present value of dollars paid, not what an indexed-bracket world would charge.
 

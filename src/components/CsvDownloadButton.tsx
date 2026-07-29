@@ -5,9 +5,15 @@ interface CsvDownloadButtonProps {
   /** Built lazily on click — no cost while the panel just sits there. */
   getTable: () => ExportTable;
   label?: string;
+  /** Shown below the `sm` breakpoint, where the full label crowds the header. */
+  shortLabel?: string;
 }
 
-export function CsvDownloadButton({ getTable, label = 'Download CSV' }: CsvDownloadButtonProps) {
+export function CsvDownloadButton({
+  getTable,
+  label = 'Download CSV',
+  shortLabel = 'CSV',
+}: CsvDownloadButtonProps) {
   const handleClick = () => {
     const table = getTable();
     downloadCsv(csvFilename(table), toCsv(table));
@@ -28,7 +34,8 @@ export function CsvDownloadButton({ getTable, label = 'Download CSV' }: CsvDownl
           d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
         />
       </svg>
-      {label}
+      <span className="hidden sm:inline">{label}</span>
+      <span className="sm:hidden">{shortLabel}</span>
     </button>
   );
 }
