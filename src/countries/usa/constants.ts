@@ -30,6 +30,15 @@ export const TAX_BRACKETS_SINGLE: TaxBracket[] = [
 export const STANDARD_DEDUCTION_MFJ = 32200;
 export const STANDARD_DEDUCTION_SINGLE = 16100;
 
+// Social Security taxability thresholds (provisional income). These are
+// FROZEN by statute — unlike brackets, they have never been indexed to
+// inflation — so projections must NOT scale them. Over long horizons this
+// means most retirees phase into the 85% maximum, which is current law.
+export const SS_TAXABILITY_THRESHOLDS = {
+  single: { base: 25000, upper: 34000 },
+  married_filing_jointly: { base: 32000, upper: 44000 },
+};
+
 // Long-term capital gains rates (2026)
 export const CAPITAL_GAINS_BRACKETS_MFJ: TaxBracket[] = [
   { min: 0, max: 98900, rate: 0 },
@@ -43,8 +52,14 @@ export const CAPITAL_GAINS_BRACKETS_SINGLE: TaxBracket[] = [
   { min: 545500, max: Infinity, rate: 0.20 },
 ];
 
-// RMD starts at age 73 (SECURE 2.0 Act)
+// RMD start age under the SECURE 2.0 Act: 73 for those born before 1960,
+// 75 for those born in 1960 or later (effective 2033). RMD_START_AGE is the
+// earliest possible start age; use getRMDStartAge for a specific person.
 export const RMD_START_AGE = 73;
+
+export function getRMDStartAge(birthYear: number): number {
+  return birthYear >= 1960 ? 75 : 73;
+}
 
 // IRS Uniform Lifetime Table
 export const RMD_TABLE: RMDEntry[] = [

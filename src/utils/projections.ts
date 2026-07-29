@@ -4,6 +4,7 @@ import {
   AccumulationResult,
   YearlyAccountBalance,
   is401k,
+  getTaxTreatment,
 } from '../types';
 import type { CountryConfig } from '../countries';
 
@@ -50,10 +51,17 @@ export function calculateAccumulation(
   // Initialize balances
   const balances: Record<string, number> = {};
   const contributions: Record<string, number> = {};
+  // Taxable accounts: track cost basis (starting basis + contributions) so
+  // the withdrawal phase can compute the gains portion of withdrawals.
+  const costBasis: Record<string, number> = {};
 
   accounts.forEach(account => {
     balances[account.id] = account.balance;
     contributions[account.id] = account.annualContribution;
+    if (getTaxTreatment(account.type) === 'taxable') {
+      // Default: today's balance is all basis (no unrealized gains yet).
+      costBasis[account.id] = Math.min(account.costBasis ?? account.balance, account.balance);
+    }
   });
 
   const yearlyBalances: YearlyAccountBalance[] = [];
@@ -85,6 +93,11 @@ export function calculateAccumulation(
 
       // Update balance
       balances[account.id] = balanceAfterReturn + totalContribution;
+
+      // Contributions to taxable accounts are after-tax money: add to basis
+      if (account.id in costBasis) {
+        costBasis[account.id] += totalContribution;
+      }
 
       // 3. Grow contribution for next year
       contributions[account.id] = currentContribution * (1 + account.contributionGrowthRate);
@@ -125,5 +138,6 @@ export function calculateAccumulation(
     finalBalances: { ...balances },
     totalAtRetirement: Object.values(balances).reduce((sum, b) => sum + b, 0),
     breakdownByGroup,
+    finalCostBasis: { ...costBasis },
   };
 }

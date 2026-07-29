@@ -15,6 +15,7 @@ export {
   RMD_START_AGE,
   RMD_TABLE,
   getRMDDivisor,
+  getRMDStartAge,
 } from '../countries/usa/constants';
 
 // Chart colors

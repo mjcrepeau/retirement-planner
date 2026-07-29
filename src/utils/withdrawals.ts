@@ -14,10 +14,10 @@ import {
   calculateStateTax,
   getStandardDeduction,
 } from './taxes';
-import { getRMDDivisor, RMD_START_AGE } from './constants';
+import { getRMDDivisor, getRMDStartAge } from './constants';
 import type { CountryConfig } from '../countries';
 import { calculatePenalties, type AccountWithdrawal } from './penaltyCalculator';
-import { getDefaultWithdrawalAge } from './withdrawalDefaults';
+import { getDefaultWithdrawalAge, birthYearFromAge } from './withdrawalDefaults';
 import { calculateIncomeStreamBenefits } from './incomeStreams';
 
 interface AccountState {
@@ -35,13 +35,14 @@ function calculateRMD(
   age: number,
   traditionalBalance: number,
   accountType: string,
+  birthYear: number,
   countryConfig?: CountryConfig
 ): number {
   if (countryConfig) {
-    return countryConfig.getMinimumWithdrawal(age, traditionalBalance, accountType);
+    return countryConfig.getMinimumWithdrawal(age, traditionalBalance, accountType, birthYear);
   }
-  // Fallback to US RMD logic
-  if (age < RMD_START_AGE) return 0;
+  // Fallback to US RMD logic (SECURE 2.0: start age depends on birth year)
+  if (age < getRMDStartAge(birthYear)) return 0;
   const divisor = getRMDDivisor(age);
   if (divisor <= 0) return 0;
   return traditionalBalance / divisor;
@@ -55,6 +56,7 @@ function getAvailableAccounts(
   accounts: Account[],
   currentAge: number,
   retirementAge: number,
+  birthYear: number,
   countryConfig?: CountryConfig
 ): AccountState[] {
   return accountStates.filter(state => {
@@ -65,7 +67,7 @@ function getAvailableAccounts(
     // Get withdrawal start age (from rules or default)
     const withdrawalAge = account.withdrawalRules?.startAge ??
       (countryConfig
-        ? getDefaultWithdrawalAge(account, retirementAge, countryConfig)
+        ? getDefaultWithdrawalAge(account, retirementAge, countryConfig, birthYear)
         : retirementAge);
 
     return currentAge >= withdrawalAge;
@@ -86,27 +88,44 @@ export function calculateWithdrawals(
   const retirementYears = profile.lifeExpectancy - profile.retirementAge;
   const currentYear = new Date().getFullYear();
   const retirementStartYear = currentYear + (profile.retirementAge - profile.currentAge);
+  // Birth year determines the RMD start age (US SECURE 2.0: 73 vs 75)
+  const birthYear = birthYearFromAge(profile.currentAge);
 
   // Initialize account states with final balances from accumulation
-  const accountStates: AccountState[] = accounts.map(account => ({
-    id: account.id,
-    type: account.type,
-    balance: accumulationResult.finalBalances[account.id] || 0,
-    // For taxable accounts, estimate cost basis as original balance + contributions
-    // (simplified: assume 50% of balance is gains)
-    costBasis: getTaxTreatment(account.type) === 'taxable'
-      ? (accumulationResult.finalBalances[account.id] || 0) * 0.5
-      : 0,
-  }));
+  const accountStates: AccountState[] = accounts.map(account => {
+    const finalBalance = accumulationResult.finalBalances[account.id] || 0;
+    // Taxable accounts: cost basis tracked through accumulation (starting
+    // basis + contributions). Fall back to the account's own basis — or its
+    // full balance — for results without an accumulation phase. Basis is
+    // capped at the balance so the gains portion can't go negative.
+    const trackedBasis =
+      accumulationResult.finalCostBasis?.[account.id] ??
+      account.costBasis ??
+      account.balance;
+    return {
+      id: account.id,
+      type: account.type,
+      balance: finalBalance,
+      costBasis: getTaxTreatment(account.type) === 'taxable'
+        ? Math.min(trackedBasis, finalBalance)
+        : 0,
+    };
+  });
 
   // Calculate initial target spending based on safe withdrawal rate
   const totalPortfolio = accumulationResult.totalAtRetirement;
   let targetSpending = totalPortfolio * assumptions.safeWithdrawalRate;
 
-  // Gross income from the previous simulated year, used for benefit
-  // means-testing (e.g., OAS clawback). For the first retirement year,
-  // approximate using that year's target spending.
-  let previousYearGrossIncome = targetSpending;
+  // Taxable income from the previous simulated year, expressed in TODAY'S
+  // dollars, used for benefit means-testing (e.g., OAS clawback). Deflating
+  // to today's dollars keeps the comparison against current-year thresholds
+  // in like units — the thresholds are indexed to inflation in law. For the
+  // first retirement year, approximate using that year's target spending.
+  const retirementInflationMultiplier = Math.pow(
+    1 + assumptions.inflationRate,
+    profile.retirementAge - profile.currentAge
+  );
+  let previousYearTaxableIncomeToday = targetSpending / retirementInflationMultiplier;
 
   // Portion of government retirement benefit income (Social Security,
   // CPP/OAS) that counts as taxable income. US: 85%, Canada: 100%.
@@ -127,7 +146,9 @@ export function calculateWithdrawals(
     const age = profile.retirementAge + i;
     const year = retirementStartYear + i;
 
-    // Check if portfolio is depleted
+    // Fallback depletion check: balance already at zero entering the year
+    // (e.g., spending fully covered by benefits). The primary signal is the
+    // first year with a spending shortfall, recorded after withdrawals.
     const totalRemaining = accountStates.reduce((sum, acc) => sum + acc.balance, 0);
     if (totalRemaining <= 0 && portfolioDepletionAge === null) {
       portfolioDepletionAge = age;
@@ -140,10 +161,10 @@ export function calculateWithdrawals(
     // Calculate government retirement benefits (Social Security, CPP/OAS, etc.)
     let governmentBenefits = 0;
     if (countryConfig) {
-      // Use the prior simulated year's gross income for means-testing
-      // (e.g., OAS clawback). For the first retirement year, this is
-      // approximated using that year's target spending.
-      const benefits = countryConfig.calculateRetirementBenefits(profile, age, previousYearGrossIncome);
+      // Use the prior simulated year's taxable income, in today's dollars,
+      // for means-testing (e.g., OAS clawback). For the first retirement
+      // year, this is approximated using that year's target spending.
+      const benefits = countryConfig.calculateRetirementBenefits(profile, age, previousYearTaxableIncomeToday);
       governmentBenefits = benefits.reduce((sum, b) => sum + b.annualAmount, 0);
       // Adjust for inflation
       governmentBenefits *= inflationMultiplier;
@@ -183,12 +204,17 @@ export function calculateWithdrawals(
     accountStates
       .filter(acc => isTraditionalAccount(acc.type))
       .forEach(acc => {
-        const minWithdrawal = calculateRMD(age, acc.balance, acc.type, countryConfig);
+        const minWithdrawal = calculateRMD(age, acc.balance, acc.type, birthYear, countryConfig);
         totalMinimumWithdrawal += minWithdrawal;
       });
     const rmdAmount = totalMinimumWithdrawal;
 
-    // Pre-compute non-portfolio taxable income for bracket-filling logic
+    // Pre-compute non-portfolio taxable income for bracket-filling logic.
+    // This uses the flat maximum rate for benefit income (US: 85%) as a
+    // planning ESTIMATE — the exact US taxable portion depends on the
+    // year's other income (provisional-income phase-in), which isn't known
+    // until withdrawals are decided. Slightly overestimating here just
+    // makes the bracket-fill step a touch conservative.
     const nonPortfolioTaxableIncome =
       governmentBenefitIncome * governmentBenefitTaxableRate +
       inflatedStreamByTax.social_security * 0.85 +
@@ -205,9 +231,18 @@ export function calculateWithdrawals(
       profile,
       accountDepletionAges,
       age,
+      birthYear,
       countryConfig,
-      nonPortfolioTaxableIncome
+      nonPortfolioTaxableIncome,
+      inflationMultiplier
     );
+
+    // The year the portfolio first fails to cover target spending is the
+    // depletion year (previously this was reported one year late, at the
+    // first year that STARTED at zero).
+    if (withdrawals.shortfall > 0 && portfolioDepletionAge === null) {
+      portfolioDepletionAge = age;
+    }
 
     // Calculate early withdrawal penalties
     const penalties = countryConfig
@@ -221,38 +256,64 @@ export function calculateWithdrawals(
     });
 
     // Calculate taxes using country-specific logic
-    // Government benefits (US Social Security: 85% taxable; Canada CPP/OAS: 100% taxable)
-    const governmentBenefitTaxable = governmentBenefitIncome * governmentBenefitTaxableRate;
     // Income streams: per-bucket tax rules
-    const ssStreamTaxable = inflatedStreamByTax.social_security * 0.85;
     const pensionTaxable = inflatedStreamByTax.fully_taxable;
     const otherIncomeTaxable = inflatedStreamByTax.other_income;
     // tax_free: excluded from taxable income
 
-    const ordinaryIncome = withdrawals.traditionalWithdrawal +
-      governmentBenefitTaxable + ssStreamTaxable + pensionTaxable + otherIncomeTaxable;
     const capitalGains = withdrawals.taxableGains;
+
+    // Exact taxable portion of benefit income, now that this year's
+    // withdrawals are known. (The bracket-fill step above used the flat
+    // 85% ESTIMATE via nonPortfolioTaxableIncome; the US provisional-income
+    // phase-in depends on other income, which wasn't known yet at that
+    // point.) US: 0% → 50% → 85% phase-in against frozen thresholds;
+    // Canada: CPP/OAS 100%, social_security streams at the 85% treaty rate.
+    const otherIncomeForBenefitTax = withdrawals.traditionalWithdrawal +
+      pensionTaxable + otherIncomeTaxable + capitalGains;
+    const benefitTaxable = countryConfig
+      ? countryConfig.getTaxableGovernmentBenefits(
+          governmentBenefitIncome,
+          inflatedStreamByTax.social_security,
+          otherIncomeForBenefitTax,
+          profile
+        )
+      : (governmentBenefitIncome + inflatedStreamByTax.social_security) * 0.85;
+
+    const ordinaryIncome = withdrawals.traditionalWithdrawal +
+      benefitTaxable + pensionTaxable + otherIncomeTaxable;
 
     let federalTax: number;
     let stateTax: number;
+    let yearTaxableIncome: number;
 
     if (countryConfig) {
       // Use the country's consolidated tax calculation, which handles
       // capital gains stacking, inclusion rates, and regional tax rules.
-      const taxes = countryConfig.calculateYearlyTaxes(ordinaryIncome, capitalGains, profile);
+      // Brackets/deductions are indexed by the year's inflation multiplier.
+      const taxes = countryConfig.calculateYearlyTaxes(
+        ordinaryIncome,
+        capitalGains,
+        profile,
+        inflationMultiplier
+      );
       federalTax = taxes.federalTax;
       stateTax = taxes.regionalTax;
+      yearTaxableIncome = taxes.taxableIncome;
     } else {
       // Fallback to US logic
       federalTax = calculateTotalFederalTax(
         ordinaryIncome,
         capitalGains,
-        profile.filingStatus || 'single'
+        profile.filingStatus || 'single',
+        inflationMultiplier
       );
       stateTax = calculateStateTax(
-        ordinaryIncome + capitalGains - getStandardDeduction(profile.filingStatus || 'single'),
+        ordinaryIncome + capitalGains -
+          getStandardDeduction(profile.filingStatus || 'single') * inflationMultiplier,
         profile.stateTaxRate || 0
       );
+      yearTaxableIncome = ordinaryIncome + capitalGains;
     }
     const totalTax = federalTax + stateTax + totalPenalties;
     lifetimeTaxesPaid += totalTax;
@@ -285,11 +346,14 @@ export function calculateWithdrawals(
       totalRemainingBalance: accountStates.reduce((sum, acc) => sum + acc.balance, 0),
       earlyWithdrawalPenalties: penalties,
       totalPenalties,
+      spendingShortfall: withdrawals.shortfall,
     });
 
-    // Track this year's gross income for next year's benefit means-testing
-    // (e.g., OAS clawback)
-    previousYearGrossIncome = grossIncome;
+    // Track this year's taxable income, deflated to today's dollars, for
+    // next year's benefit means-testing (e.g., OAS clawback). Taxable
+    // income — not gross — so tax-free withdrawals (TFSA, Roth) don't
+    // trigger clawback.
+    previousYearTaxableIncomeToday = yearTaxableIncome / inflationMultiplier;
 
     // Inflate target spending for next year
     targetSpending *= (1 + assumptions.inflationRate);
@@ -320,6 +384,7 @@ interface WithdrawalResult {
   hsaWithdrawal: number;
   byAccount: Record<string, number>;
   accountWithdrawals: AccountWithdrawal[];  // NEW: for penalty calculation
+  shortfall: number; // Unmet spending need after every withdrawal source is exhausted
 }
 
 /**
@@ -338,8 +403,10 @@ function performTaxOptimizedWithdrawal(
   profile: Profile,
   accountDepletionAges: Record<string, number | null>,
   age: number,
+  birthYear: number,
   countryConfig?: CountryConfig,
-  nonPortfolioTaxableIncome?: number
+  nonPortfolioTaxableIncome?: number,
+  inflationMultiplier: number = 1
 ): WithdrawalResult {
   const result: WithdrawalResult = {
     total: 0,
@@ -350,6 +417,7 @@ function performTaxOptimizedWithdrawal(
     hsaWithdrawal: 0,
     byAccount: {},
     accountWithdrawals: [],  // NEW
+    shortfall: 0,
   };
 
   accountStates.forEach(acc => {
@@ -378,6 +446,7 @@ function performTaxOptimizedWithdrawal(
     accounts,
     age,
     profile.retirementAge,
+    birthYear,
     countryConfig
   );
 
@@ -415,10 +484,13 @@ function performTaxOptimizedWithdrawal(
 
   // Step 2: Fill up to the low tax bracket with additional traditional withdrawals
   // (country-specific target balances tax efficiency against future tax torpedo risk)
+  // The fill target is defined in current-year dollars, so index it by the
+  // year's inflation multiplier to match the (indexed) brackets it fills.
   const filingStatus = profile.filingStatus || 'single';
-  const targetOrdinaryIncome = countryConfig
+  const baseFillTarget = countryConfig
     ? countryConfig.getLowBracketFillTarget(filingStatus)
     : getStandardDeduction(filingStatus) + (filingStatus === 'married_filing_jointly' ? 100800 : 50400);
+  const targetOrdinaryIncome = baseFillTarget * inflationMultiplier;
   const currentOrdinaryIncome = result.traditionalWithdrawal +
     (nonPortfolioTaxableIncome || 0);
   const roomInBracket = Math.max(0, targetOrdinaryIncome - currentOrdinaryIncome);
@@ -533,7 +605,7 @@ function performTaxOptimizedWithdrawal(
 
       const withdrawalAge = account.withdrawalRules?.startAge ??
         (countryConfig
-          ? getDefaultWithdrawalAge(account, profile.retirementAge, countryConfig)
+          ? getDefaultWithdrawalAge(account, profile.retirementAge, countryConfig, birthYear)
           : profile.retirementAge);
 
       return age < withdrawalAge && state.balance > 0;
@@ -594,5 +666,6 @@ function performTaxOptimizedWithdrawal(
     }
   }
 
+  result.shortfall = Math.max(0, remainingNeed);
   return result;
 }

@@ -30,11 +30,5 @@ export function calculateSocialSecurityBenefits(
   return benefits;
 }
 
-/**
- * Calculate taxable portion of Social Security
- * US has up to 85% of SS taxable depending on income
- * Simplified: assumes 85% taxable
- */
-export function getTaxableSocialSecurity(socialSecurityBenefit: number): number {
-  return socialSecurityBenefit * 0.85;
-}
+// The taxable portion of Social Security is computed by
+// calculateTaxableSocialSecurity in ./taxes.ts (provisional-income phase-in).

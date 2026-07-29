@@ -23,9 +23,10 @@ export function getCapitalGainsBrackets(filingStatus: FilingStatus): TaxBracket[
  */
 export function calculateFederalIncomeTax(
   taxableIncome: number,
-  filingStatus: FilingStatus
+  filingStatus: FilingStatus,
+  indexFactor: number = 1
 ): number {
-  return usaTaxes.calculateFederalIncomeTax(taxableIncome, filingStatus);
+  return usaTaxes.calculateFederalIncomeTax(taxableIncome, filingStatus, indexFactor);
 }
 
 /**
@@ -35,9 +36,10 @@ export function calculateFederalIncomeTax(
 export function calculateCapitalGainsTax(
   capitalGains: number,
   otherTaxableIncome: number,
-  filingStatus: FilingStatus
+  filingStatus: FilingStatus,
+  indexFactor: number = 1
 ): number {
-  return usaTaxes.calculateCapitalGainsTax(capitalGains, otherTaxableIncome, filingStatus);
+  return usaTaxes.calculateCapitalGainsTax(capitalGains, otherTaxableIncome, filingStatus, indexFactor);
 }
 
 /**
@@ -46,9 +48,10 @@ export function calculateCapitalGainsTax(
 export function calculateTotalFederalTax(
   ordinaryIncome: number, // Traditional withdrawals, SS, etc.
   capitalGains: number, // Growth portion of taxable account withdrawals
-  filingStatus: FilingStatus
+  filingStatus: FilingStatus,
+  indexFactor: number = 1
 ): number {
-  return usaTaxes.calculateTotalFederalTax(ordinaryIncome, capitalGains, filingStatus);
+  return usaTaxes.calculateTotalFederalTax(ordinaryIncome, capitalGains, filingStatus, indexFactor);
 }
 
 /**

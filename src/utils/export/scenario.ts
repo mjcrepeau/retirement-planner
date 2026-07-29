@@ -160,6 +160,7 @@ function parseAccount(value: unknown, index: number): Account {
     ),
     employerMatchLimit: optionalNum(value.employerMatchLimit, `${label}.employerMatchLimit`),
     withdrawalRules: parsedRules,
+    costBasis: optionalNum(value.costBasis, `${label}.costBasis`),
   };
 }
 

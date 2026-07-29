@@ -9,6 +9,10 @@
  *
  * Anything that presents "today's dollars" must divide by the inflation factor
  * for that year — see SummaryCards and the CSV/print exports.
+ *
+ * Tax brackets, deductions, and benefit thresholds are indexed by the same
+ * inflation assumption inside the engine, so deflated tax figures reflect
+ * constant real tax policy rather than artificial bracket creep.
  */
 
 /**

@@ -23,6 +23,7 @@ export function useRetirementCalc(
         finalBalances: {},
         totalAtRetirement: 0,
         breakdownByGroup: {},
+        finalCostBasis: {},
       };
     }
     return calculateAccumulation(accounts, profile, countryConfig);

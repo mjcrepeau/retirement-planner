@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { Account, AccountType, Profile, getAccountTypeLabel, is401k } from '../types';
+import { Account, AccountType, Profile, getAccountTypeLabel, is401k, getTaxTreatment } from '../types';
 import { NumberInput } from './NumberInput';
 import { Tooltip } from './Tooltip';
 import { v4 as uuidv4 } from 'uuid';
 import { useCountry } from '../contexts/CountryContext';
-import { getDefaultWithdrawalAge, getMaxWithdrawalAge } from '../utils/withdrawalDefaults';
+import { getDefaultWithdrawalAge, getMaxWithdrawalAge, birthYearFromAge } from '../utils/withdrawalDefaults';
 import { getCountryConfig } from '../countries';
 
 interface AccountFormProps {
@@ -49,10 +49,12 @@ export function AccountForm({ account, profile, onSave, onCancel }: AccountFormP
 
   // Calculate min/max withdrawal ages
   const minWithdrawalAge = profile.currentAge;
+  const birthYear = birthYearFromAge(profile.currentAge);
   const maxWithdrawalAge = getMaxWithdrawalAge(
     { ...formData, id: account?.id || '' },
     profile.lifeExpectancy,
-    fullCountryConfig
+    fullCountryConfig,
+    birthYear
   );
 
   // Get current withdrawal age (or default)
@@ -60,7 +62,8 @@ export function AccountForm({ account, profile, onSave, onCancel }: AccountFormP
     getDefaultWithdrawalAge(
       { ...formData, id: account?.id || '' },
       profile.retirementAge,
-      fullCountryConfig
+      fullCountryConfig,
+      birthYear
     );
 
   // Derive warning state instead of storing in state
@@ -96,6 +99,14 @@ export function AccountForm({ account, profile, onSave, onCancel }: AccountFormP
       newErrors.annualContribution = 'Contribution cannot be negative';
     }
 
+    if (formData.costBasis !== undefined) {
+      if (formData.costBasis < 0) {
+        newErrors.costBasis = 'Cost basis cannot be negative';
+      } else if (formData.costBasis > formData.balance) {
+        newErrors.costBasis = 'Cost basis cannot exceed the current balance';
+      }
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -105,9 +116,17 @@ export function AccountForm({ account, profile, onSave, onCancel }: AccountFormP
 
     if (!validate()) return;
 
+    // Cost basis only applies to taxable accounts; drop it if the account
+    // type was switched to something else.
+    const { costBasis, ...rest } = formData;
+    const saved: Omit<Account, 'id'> =
+      getTaxTreatment(formData.type) === 'taxable' && costBasis !== undefined
+        ? { ...rest, costBasis }
+        : rest;
+
     onSave({
       id: account?.id || uuidv4(),
-      ...formData,
+      ...saved,
     });
   };
 
@@ -166,6 +185,23 @@ export function AccountForm({ account, profile, onSave, onCancel }: AccountFormP
           />
           {errors.balance && <p className="text-red-500 text-xs mt-1">{errors.balance}</p>}
         </div>
+
+        {getTaxTreatment(formData.type) === 'taxable' && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Cost Basis ($)
+              <Tooltip text="The amount you originally invested (contributions, not growth). Used to compute the taxable gains portion of withdrawals. Leave equal to the balance if you have no unrealized gains; future contributions are added to it automatically." />
+            </label>
+            <NumberInput
+              value={formData.costBasis ?? formData.balance}
+              onChange={(val) => handleChange('costBasis', val)}
+              min={0}
+              defaultValue={formData.balance}
+              className={errors.costBasis ? inputErrorClassName : inputClassName}
+            />
+            {errors.costBasis && <p className="text-red-500 text-xs mt-1">{errors.costBasis}</p>}
+          </div>
+        )}
 
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -292,7 +328,8 @@ export function AccountForm({ account, profile, onSave, onCancel }: AccountFormP
             Default: {getDefaultWithdrawalAge(
               { ...formData, id: account?.id || '' },
               profile.retirementAge,
-              fullCountryConfig
+              fullCountryConfig,
+              birthYear
             )}
             {maxWithdrawalAge < profile.lifeExpectancy && ` (Max: ${maxWithdrawalAge} due to RMD)`}
           </p>

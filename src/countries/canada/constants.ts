@@ -115,6 +115,20 @@ export const PROVINCIAL_TAX_BRACKETS: Record<string, TaxBracket[]> = {
   ],
 };
 
+// Ontario surtax (2026): 20% of basic ON tax above the first threshold plus
+// 36% of basic ON tax above the second (both apply concurrently above the
+// second threshold). Thresholds are indexed to inflation annually.
+export const ONTARIO_SURTAX = {
+  threshold1: 5818,
+  rate1: 0.20,
+  threshold2: 7446,
+  rate2: 0.36,
+};
+
+// Quebec abatement: QC residents receive a 16.5% reduction of basic federal
+// tax (in lieu of federal cash transfers for provincially run programs).
+export const QUEBEC_ABATEMENT_RATE = 0.165;
+
 export const PROVINCIAL_BASIC_PERSONAL_AMOUNTS: Record<string, number> = {
   AB: 22769, // 2026
   BC: 13216, // 2026

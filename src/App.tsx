@@ -13,7 +13,7 @@ import { useRetirementCalc } from './hooks/useRetirementCalc';
 import { useLocalStorage, useDarkMode } from './hooks/useLocalStorage';
 import { CountryProvider, useCountry } from './contexts/CountryContext';
 import { getCountryConfig, type CountryCode } from './countries';
-import { getDefaultWithdrawalAge } from './utils/withdrawalDefaults';
+import { getDefaultWithdrawalAge, birthYearFromAge } from './utils/withdrawalDefaults';
 import { Layout } from './components/Layout';
 import { AccountList } from './components/AccountList';
 import { ProfileForm } from './components/ProfileForm';
@@ -99,7 +99,12 @@ function normalizeAccount(
 
   // Apply default withdrawal age based on account type and country config
   const countryConfig = getCountryConfig(profile.country);
-  const defaultAge = getDefaultWithdrawalAge(account, profile.retirementAge, countryConfig);
+  const defaultAge = getDefaultWithdrawalAge(
+    account,
+    profile.retirementAge,
+    countryConfig,
+    birthYearFromAge(profile.currentAge)
+  );
 
   return {
     ...account,

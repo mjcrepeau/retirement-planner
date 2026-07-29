@@ -1,7 +1,9 @@
-import { RMD_TABLE, RMD_START_AGE } from './constants';
+import { RMD_TABLE, RMD_START_AGE, getRMDStartAge } from './constants';
 
 /**
- * Get RMD divisor for a given age
+ * Get RMD divisor for a given age (IRS Uniform Lifetime Table lookup).
+ * Gated at the earliest possible RMD age; the caller applies the
+ * birth-year-specific start age via calculateRMD.
  */
 export function getRMDDivisor(age: number): number {
   if (age < RMD_START_AGE) return 0;
@@ -13,12 +15,22 @@ export function getRMDDivisor(age: number): number {
 }
 
 /**
- * Calculate Required Minimum Distribution
+ * Calculate Required Minimum Distribution.
+ *
+ * `birthYear` determines the start age under SECURE 2.0 (73 for those born
+ * before 1960, 75 for 1960 or later). When omitted, the earliest start age
+ * (73) is used.
  */
-export function calculateRMD(age: number, balance: number, accountType: string): number {
+export function calculateRMD(
+  age: number,
+  balance: number,
+  accountType: string,
+  birthYear?: number
+): number {
   // RMDs only apply to traditional (pretax) accounts
   if (!isTraditionalAccount(accountType)) return 0;
-  if (age < RMD_START_AGE) return 0;
+  const startAge = birthYear !== undefined ? getRMDStartAge(birthYear) : RMD_START_AGE;
+  if (age < startAge) return 0;
   if (balance <= 0) return 0;
 
   const divisor = getRMDDivisor(age);

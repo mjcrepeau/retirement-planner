@@ -215,9 +215,12 @@ export function SummaryCards({
   const lifetimeFederalTax = yearlyWithdrawals.reduce((sum, y) => sum + y.federalTax, 0);
   const lifetimeStateTax = yearlyWithdrawals.reduce((sum, y) => sum + y.stateTax, 0);
 
-  // Calculate average effective tax rate
-  const avgEffectiveTaxRate = yearlyWithdrawals.length > 0
-    ? yearlyWithdrawals.reduce((sum, y) => sum + (y.grossIncome > 0 ? y.totalTax / y.grossIncome : 0), 0) / yearlyWithdrawals.length
+  // Lifetime effective tax rate, dollar-weighted (total tax / total income).
+  // Matches the taxes export footer; an unweighted average of yearly rates
+  // would let low-income years dilute the figure.
+  const lifetimeGrossIncome = yearlyWithdrawals.reduce((sum, y) => sum + y.grossIncome, 0);
+  const avgEffectiveTaxRate = lifetimeGrossIncome > 0
+    ? lifetimeTaxesPaid / lifetimeGrossIncome
     : 0;
 
   // Lifetime early-withdrawal penalties, nominal and real.
@@ -400,7 +403,7 @@ export function SummaryCards({
                   )}
                 </ul>
                 <p className="mb-1">
-                  Average effective tax rate: {formatPercent(avgEffectiveTaxRate)}
+                  Lifetime effective tax rate: {formatPercent(avgEffectiveTaxRate)}
                 </p>
                 {todayHint(lifetimeTaxesPaid, lifetimeTaxesReal) && (
                   <p className="mb-1 text-gray-500 dark:text-gray-400 italic">
@@ -491,7 +494,7 @@ export function SummaryCards({
                   <p>
                     {isCanada
                       ? 'CPP is fully taxable as ordinary income.'
-                      : '85% of Social Security is included as taxable income (maximum taxable portion).'}
+                      : 'Up to 85% of Social Security is taxable, following the IRS provisional-income phase-in.'}
                   </p>
                 </div>
               }

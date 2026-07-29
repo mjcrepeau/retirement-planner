@@ -10,6 +10,8 @@ import {
   FEDERAL_BASIC_PERSONAL_AMOUNT,
   FEDERAL_TAX_BRACKETS,
   CAPITAL_GAINS_INCLUSION_RATE_DEFAULT,
+  RRIF_START_AGE,
+  QUEBEC_ABATEMENT_RATE,
 } from './constants';
 import { CHART_COLORS } from '../../utils/constants';
 
@@ -113,8 +115,9 @@ export const CAConfig: CountryConfig = {
   calculateYearlyTaxes: (
     ordinaryIncome: number,
     capitalGains: number,
-    profile: Profile
-  ): { federalTax: number; regionalTax: number } => {
+    profile: Profile,
+    indexFactor: number = 1
+  ): { federalTax: number; regionalTax: number; taxableIncome: number } => {
     // Capital gains are included in taxable income at a flat 50% inclusion
     // rate and stack on top of ordinary income.
     const taxableCapitalGains = Math.max(0, capitalGains) * CAPITAL_GAINS_INCLUSION_RATE_DEFAULT;
@@ -122,15 +125,32 @@ export const CAConfig: CountryConfig = {
 
     // Federal and provincial brackets each apply their own basic personal
     // amount exactly once against the combined taxable income.
-    const federalTax = calculateFederalIncomeTax(taxableIncome);
-    const regionalTax = calculateProvincialIncomeTax(taxableIncome, profile.region || '');
+    let federalTax = calculateFederalIncomeTax(taxableIncome, indexFactor);
+    const regionalTax = calculateProvincialIncomeTax(taxableIncome, profile.region || '', indexFactor);
 
-    return { federalTax, regionalTax };
+    // Quebec residents receive the 16.5% federal abatement.
+    if (profile.region === 'QC') {
+      federalTax *= 1 - QUEBEC_ABATEMENT_RATE;
+    }
+
+    return { federalTax, regionalTax, taxableIncome };
   },
 
   getGovernmentBenefitTaxableRate: (): number => {
     // CPP and OAS are fully taxable in Canada
     return 1.0;
+  },
+
+  getTaxableGovernmentBenefits: (
+    governmentBenefitIncome: number,
+    ssStreamIncome: number,
+    _otherOrdinaryIncome: number,
+    _profile: Profile
+  ): number => {
+    // CPP/OAS are 100% taxable. US Social Security received by a Canadian
+    // resident is included at 85% under the Canada–US tax treaty, matching
+    // the social_security stream treatment.
+    return governmentBenefitIncome + ssStreamIncome * 0.85;
   },
 
   getLowBracketFillTarget: (): number => {
@@ -142,13 +162,16 @@ export const CAConfig: CountryConfig = {
     return CANADIAN_PROVINCES;
   },
 
-  calculateRetirementBenefits: (profile: Profile, currentAge: number, grossIncome: number) => {
-    return calculateCanadianRetirementBenefits(profile, currentAge, grossIncome);
+  calculateRetirementBenefits: (profile: Profile, currentAge: number, meansTestIncome: number) => {
+    return calculateCanadianRetirementBenefits(profile, currentAge, meansTestIncome);
   },
 
-  getMinimumWithdrawal: (age: number, balance: number, accountType: string) => {
+  getMinimumWithdrawal: (age: number, balance: number, accountType: string, _birthYear?: number) => {
     return calculateRRIFMinimum(age, balance, accountType);
   },
+
+  // RRIF conversion age does not depend on birth year in Canada.
+  getRMDStartAge: (_birthYear: number) => RRIF_START_AGE,
 
   getDefaultProfile: () => ({
     country: 'CA' as const,

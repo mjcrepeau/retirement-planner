@@ -109,6 +109,10 @@ export interface Account {
   employerMatchPercent?: number; // 401k only, as decimal
   employerMatchLimit?: number; // 401k only, dollar amount
   withdrawalRules?: AccountWithdrawalRules;  // Optional for backwards compatibility
+  // Taxable accounts only: amount originally invested (for capital gains).
+  // Defaults to the full current balance when unset. Contributions made
+  // during the accumulation phase are added to it automatically.
+  costBasis?: number;
 }
 
 export interface Profile {
@@ -144,6 +148,11 @@ export interface AccumulationResult {
   finalBalances: Record<string, number>;
   totalAtRetirement: number;
   breakdownByGroup: Record<string, number>; // Flexible groupings defined by country
+  // Cost basis at retirement for taxable accounts: starting basis plus all
+  // contributions made during accumulation. Optional so mock results without
+  // an accumulation phase still work; the engine falls back to the account's
+  // own costBasis (or full balance) when absent.
+  finalCostBasis?: Record<string, number>;
 }
 
 export interface YearlyWithdrawal {
@@ -164,6 +173,9 @@ export interface YearlyWithdrawal {
   totalRemainingBalance: number;
   earlyWithdrawalPenalties: EarlyWithdrawalPenalty[];
   totalPenalties: number;
+  // Portion of target spending the portfolio + income could not cover this
+  // year (0 when the target was fully met).
+  spendingShortfall: number;
 }
 
 export interface RetirementResult {

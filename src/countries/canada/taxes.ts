@@ -1,9 +1,11 @@
 import type { TaxBracket } from '../../types';
+import { scaleBrackets } from '../../utils/taxBrackets';
 import {
   FEDERAL_TAX_BRACKETS,
   FEDERAL_BASIC_PERSONAL_AMOUNT,
   PROVINCIAL_TAX_BRACKETS,
   PROVINCIAL_BASIC_PERSONAL_AMOUNTS,
+  ONTARIO_SURTAX,
 } from './constants';
 
 /**
@@ -29,17 +31,25 @@ function calculateProgressiveTax(income: number, brackets: TaxBracket[]): number
 }
 
 /**
- * Calculate federal income tax (Canada)
+ * Calculate federal income tax (Canada).
+ *
+ * `indexFactor` scales bracket boundaries and the basic personal amount for
+ * future-year projections (both are indexed to inflation under current law);
+ * 1 = current year.
  */
-export function calculateFederalIncomeTax(income: number): number {
-  const taxableIncome = Math.max(0, income - FEDERAL_BASIC_PERSONAL_AMOUNT);
-  return calculateProgressiveTax(taxableIncome, FEDERAL_TAX_BRACKETS);
+export function calculateFederalIncomeTax(income: number, indexFactor: number = 1): number {
+  const taxableIncome = Math.max(0, income - FEDERAL_BASIC_PERSONAL_AMOUNT * indexFactor);
+  return calculateProgressiveTax(taxableIncome, scaleBrackets(FEDERAL_TAX_BRACKETS, indexFactor));
 }
 
 /**
  * Calculate provincial income tax
  */
-export function calculateProvincialIncomeTax(income: number, provinceCode: string): number {
+export function calculateProvincialIncomeTax(
+  income: number,
+  provinceCode: string,
+  indexFactor: number = 1
+): number {
   const brackets = PROVINCIAL_TAX_BRACKETS[provinceCode];
   const basicPersonalAmount = PROVINCIAL_BASIC_PERSONAL_AMOUNTS[provinceCode] || 0;
 
@@ -48,8 +58,22 @@ export function calculateProvincialIncomeTax(income: number, provinceCode: strin
     return 0;
   }
 
-  const taxableIncome = Math.max(0, income - basicPersonalAmount);
-  return calculateProgressiveTax(taxableIncome, brackets);
+  const taxableIncome = Math.max(0, income - basicPersonalAmount * indexFactor);
+  const basicTax = calculateProgressiveTax(taxableIncome, scaleBrackets(brackets, indexFactor));
+
+  // Ontario levies a surtax on basic provincial tax itself; without it the
+  // bracket rates alone substantially understate ON tax at higher incomes.
+  // Its thresholds are indexed annually, so scale them like the brackets.
+  if (provinceCode === 'ON') {
+    const t1 = ONTARIO_SURTAX.threshold1 * indexFactor;
+    const t2 = ONTARIO_SURTAX.threshold2 * indexFactor;
+    const surtax =
+      ONTARIO_SURTAX.rate1 * Math.max(0, basicTax - t1) +
+      ONTARIO_SURTAX.rate2 * Math.max(0, basicTax - t2);
+    return basicTax + surtax;
+  }
+
+  return basicTax;
 }
 
 /**

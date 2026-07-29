@@ -9,8 +9,9 @@ import {
   CAPITAL_GAINS_BRACKETS_MFJ,
   CAPITAL_GAINS_BRACKETS_SINGLE,
   RMD_TABLE,
-  RMD_START_AGE,
+  getRMDStartAge,
 } from '../utils/constants';
+import { birthYearFromAge } from '../utils/withdrawalDefaults';
 import {
   TAX_DATA_YEAR as CA_TAX_DATA_YEAR,
   FEDERAL_TAX_BRACKETS as CA_FEDERAL_BRACKETS,
@@ -50,6 +51,8 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
 
   // US-specific values
   const isMarried = profile.filingStatus === 'married_filing_jointly';
+  // SECURE 2.0: RMDs start at 73 for those born before 1960, 75 otherwise
+  const rmdStartAge = getRMDStartAge(birthYearFromAge(profile.currentAge));
   const taxBrackets = isMarried ? TAX_BRACKETS_MFJ : TAX_BRACKETS_SINGLE;
   const standardDeduction = isMarried ? STANDARD_DEDUCTION_MFJ : STANDARD_DEDUCTION_SINGLE;
   const capitalGainsBrackets = isMarried ? CAPITAL_GAINS_BRACKETS_MFJ : CAPITAL_GAINS_BRACKETS_SINGLE;
@@ -223,7 +226,7 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
                 <div>
                   <strong className="text-gray-800 dark:text-gray-200">Additional RRSP/RRIF Withdrawals</strong>
                   <p className="text-gray-600 dark:text-gray-400">
-                    Additional withdrawals from registered accounts (RRSP, RRIF, LIRA, LIF, FHSA) to fill the first federal tax bracket (up to {formatCurrency(caBracketFillTarget, currency)} total ordinary income, combining the {formatCurrency(CA_BASIC_PERSONAL, currency)} basic personal amount and the {formatCurrency(CA_FEDERAL_BRACKETS[0].max, currency)} top of the 15% bracket).
+                    Additional withdrawals from registered accounts (RRSP, RRIF, LIRA, LIF, FHSA) to fill the first federal tax bracket (up to {formatCurrency(caBracketFillTarget, currency)} total ordinary income, combining the {formatCurrency(CA_BASIC_PERSONAL, currency)} basic personal amount and the {formatCurrency(CA_FEDERAL_BRACKETS[0].max, currency)} top of the {formatPercent(CA_FEDERAL_BRACKETS[0].rate)} bracket).
                   </p>
                 </div>
               </li>
@@ -265,7 +268,7 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
                 <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xs font-bold">1</span>
                 <div>
                   <strong className="text-gray-800 dark:text-gray-200">Required Minimum Distributions (RMDs)</strong>
-                  <p className="text-gray-600 dark:text-gray-400">Starting at age {RMD_START_AGE}, traditional accounts must take RMDs based on IRS life expectancy tables.</p>
+                  <p className="text-gray-600 dark:text-gray-400">Starting at age {rmdStartAge} (based on your birth year, per SECURE 2.0), traditional accounts must take RMDs based on IRS life expectancy tables.</p>
                 </div>
               </li>
               <li className="flex gap-3">
@@ -349,10 +352,13 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
             ) : (
               <>
                 <code className="text-xs bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded block mb-2 text-gray-800 dark:text-gray-200">
-                  Taxable Income = Traditional Withdrawals + (Social Security × 85%) - Standard Deduction
+                  Taxable Income = Traditional Withdrawals + Taxable Social Security - Standard Deduction
                 </code>
                 <p className="text-gray-600 dark:text-gray-400">
                   Progressive brackets applied to taxable income (see table below).
+                  The taxable share of Social Security (0% to 85%) follows the IRS provisional-income
+                  phase-in; its thresholds are frozen by law (not inflation-indexed), so most retirees
+                  reach the 85% maximum over long horizons.
                 </p>
               </>
             )}
@@ -537,7 +543,7 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
                   RMD = Traditional Account Balance / Life Expectancy Divisor
                 </code>
                 <p className="text-gray-600 dark:text-gray-400">
-                  RMDs begin at age {RMD_START_AGE} per the SECURE 2.0 Act. The divisor decreases with age, requiring larger withdrawals.
+                  RMDs begin at age {rmdStartAge} per the SECURE 2.0 Act (73 if born before 1960, 75 otherwise). The divisor decreases with age, requiring larger withdrawals.
                 </p>
               </>
             )}
@@ -614,9 +620,9 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
                   <li>• Maximum monthly benefit at 65: {formatCurrency(OAS_MAX_MONTHLY, currency)}/month</li>
                   <li>• Available from age 65 to 70</li>
                   <li>• Deferral increases benefit by 0.6% per month</li>
-                  <li>• Clawback begins at {formatCurrency(OAS_CLAWBACK_THRESHOLD, currency)} net income</li>
+                  <li>• Clawback begins at {formatCurrency(OAS_CLAWBACK_THRESHOLD, currency)} net income (in today's dollars; the threshold is indexed to inflation)</li>
                   <li>• Clawback rate: 15% of income above threshold</li>
-                  <li>• Clawback is based on the prior year's simulated net income (the first retirement year uses an estimate based on target spending)</li>
+                  <li>• Clawback is based on the prior year's simulated taxable income (the first retirement year uses an estimate based on target spending)</li>
                 </ul>
               </div>
             </>
@@ -627,7 +633,7 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
                 <li>• Configure Social Security, pensions, and other retirement income in the Income Streams panel</li>
                 <li>• Each stream has a name, monthly benefit, start age, and tax treatment</li>
                 <li>• Benefits are inflation-adjusted annually</li>
-                <li>• Social Security streams: 85% taxable (maximum rate)</li>
+                <li>• Social Security streams: 0–85% taxable via the IRS provisional-income phase-in (thresholds frozen by law)</li>
                 <li>• Pension streams: 100% taxable as ordinary income</li>
                 <li>• Tax-free streams (e.g., VA disability): excluded from taxable income</li>
               </ul>
@@ -644,7 +650,7 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
         <ul className="space-y-2 text-sm text-amber-700 dark:text-amber-300">
           <li className="flex gap-2">
             <span className="flex-shrink-0">*</span>
-            <span>Tax brackets are for {isCanada ? CA_TAX_DATA_YEAR : TAX_DATA_YEAR} and don't adjust for inflation in future years.</span>
+            <span>Tax brackets, deductions, and personal amounts are {isCanada ? CA_TAX_DATA_YEAR : TAX_DATA_YEAR} values, assumed to grow with your inflation assumption in future years (both countries index them to inflation by law).</span>
           </li>
           {isCanada ? (
             <>
@@ -654,11 +660,19 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
               </li>
               <li className="flex gap-2">
                 <span className="flex-shrink-0">*</span>
-                <span>OAS clawback is based on the prior year's simulated net income (the first retirement year is estimated from target spending) and may not reflect all income sources.</span>
+                <span>OAS clawback is based on the prior year's simulated taxable income (the first retirement year is estimated from target spending). The clawback threshold is assumed to grow with inflation, matching how it is indexed in law.</span>
               </li>
               <li className="flex gap-2">
                 <span className="flex-shrink-0">*</span>
-                <span>Quebec has a separate tax system; calculations use simplified Quebec brackets.</span>
+                <span>Quebec has a separate tax system; calculations use simplified Quebec brackets and apply the 16.5% federal abatement for Quebec residents.</span>
+              </li>
+              <li className="flex gap-2">
+                <span className="flex-shrink-0">*</span>
+                <span>The Ontario surtax (20%/36% on basic provincial tax) is modeled; the Ontario Health Premium (up to $900/year) is not.</span>
+              </li>
+              <li className="flex gap-2">
+                <span className="flex-shrink-0">*</span>
+                <span>LIRA/LIF accounts follow RRIF minimum withdrawals from age 71; LIF withdrawal maximums are not modeled.</span>
               </li>
               <li className="flex gap-2">
                 <span className="flex-shrink-0">*</span>
@@ -673,7 +687,7 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
             <>
               <li className="flex gap-2">
                 <span className="flex-shrink-0">*</span>
-                <span>Social Security is assumed 85% taxable (maximum taxable portion).</span>
+                <span>Social Security taxability uses the provisional-income phase-in (0% to 85%). The withdrawal strategy's bracket-fill step estimates with the 85% maximum before the year's exact income is known.</span>
               </li>
               <li className="flex gap-2">
                 <span className="flex-shrink-0">*</span>
@@ -687,7 +701,11 @@ export function MethodologyPanel({ profile, assumptions }: MethodologyPanelProps
           )}
           <li className="flex gap-2">
             <span className="flex-shrink-0">*</span>
-            <span>Taxable account cost basis is estimated at 50% of the balance at retirement.</span>
+            <span>Taxable account cost basis starts from the account's Cost Basis input (defaulting to the full current balance) and grows with each contribution; investment growth is treated as unrealized gains until withdrawn.</span>
+          </li>
+          <li className="flex gap-2">
+            <span className="flex-shrink-0">*</span>
+            <span>Annual taxes on dividends and interest inside taxable accounts (tax drag) are not modeled; gains are only taxed when withdrawn.</span>
           </li>
           <li className="flex gap-2">
             <span className="flex-shrink-0">*</span>
