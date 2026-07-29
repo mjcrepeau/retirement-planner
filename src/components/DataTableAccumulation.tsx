@@ -86,7 +86,7 @@ export function DataTableAccumulation({
       {isExpanded && (
         <div className="px-4 pb-4">
           {/* View Mode Tabs */}
-          <div className="flex gap-2 mb-4 border-b border-gray-200 dark:border-gray-700 items-center">
+          <div className="flex gap-2 mb-4 border-b border-gray-200 dark:border-gray-700 overflow-x-auto items-center">
             <button
               onClick={() => setViewMode('summary')}
               className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px ${
